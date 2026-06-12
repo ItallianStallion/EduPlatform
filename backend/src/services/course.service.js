@@ -1,0 +1,307 @@
+// src/services/course.service.js
+// Бізнес-логіка: каталог курсів, пошук, фільтрація, запис на курс.
+//  
+
+'use strict';
+
+const { Op, fn, col, literal } = require('sequelize');
+const { sequelize } = require('../config/database');
+const { Course, User, Category, Enrollment } = require('../models');
+const { redisClient } = require('../config/redis');
+
+const COURSES_CACHE_TTL = 5 * 60; // 5 хвилин кешування каталогу
+const PLATFORM_COMMISSION = parseFloat(process.env.PLATFORM_COMMISSION_RATE) || 0.1;
+
+// ─────────────────────────────────────────────────────────────
+// КАТАЛОГ, ПОШУК, ФІЛЬТРАЦІЯ
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Повертає список опублікованих курсів з пошуком, фільтрацією,
+ * сортуванням та пагінацією.
+ *
+ * @param {object} params
+ * @param {string} [params.q]          - Рядок пошуку (мінімум 3 символи)
+ * @param {string} [params.categoryId] - Фільтр за категорією
+ * @param {string} [params.price]      - 'free' | 'paid' | 'any' (default: 'any')
+ * @param {string} [params.sortBy]     - 'popular' | 'newest' | 'price_asc' | 'price_desc'
+ * @param {number} [params.page]       - Сторінка (default: 1)
+ * @param {number} [params.limit]      - Результатів на сторінці (default: 12)
+ * @returns {{ courses: Course[], totalCount: number, page: number, totalPages: number }}
+ */
+const getCourses = async ({
+  q,
+  categoryId,
+  price = 'any',
+  sortBy = 'newest',
+  page = 1,
+  limit = 12,
+}) => {
+  // Генеруємо ключ кешу на основі параметрів запиту
+  const cacheKey = `courses:${JSON.stringify({ q, categoryId, price, sortBy, page, limit })}`;
+
+  // Перевіряємо кеш Redis
+  const cached = await redisClient.get(cacheKey).catch(() => null);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  // --- Побудова WHERE-умов ---
+  const where = { status: 'published' };
+
+  // Пошук: мінімум 3 символи, інакше повертаємо всі курси
+  if (q && q.trim().length >= 3) {
+    where[Op.or] = [
+      { title: { [Op.iLike]: `%${q.trim()}%` } },
+      { description: { [Op.iLike]: `%${q.trim()}%` } },
+    ];
+  }
+
+  // Фільтр за категорією
+  if (categoryId) {
+    where.categoryId = categoryId;
+  }
+
+  // Фільтр за ціною
+  if (price === 'free') {
+    where.price = 0;
+  } else if (price === 'paid') {
+    where.price = { [Op.gt]: 0 };
+  }
+
+  // --- Побудова ORDER BY ---
+  let order;
+  switch (sortBy) {
+    case 'popular':
+      // Сортуємо за кількістю студентів (COUNT enrollments)
+      order = [[literal('"enrollmentCount"'), 'DESC NULLS LAST']];
+      break;
+    case 'price_asc':
+      order = [['price', 'ASC']];
+      break;
+    case 'price_desc':
+      order = [['price', 'DESC']];
+      break;
+    case 'newest':
+    default:
+      order = [['createdAt', 'DESC']];
+  }
+
+  // --- Пагінація ---
+  const offset = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
+
+  // --- Запит до БД ---
+  const { count, rows } = await Course.findAndCountAll({
+    where,
+    attributes: {
+      include: [
+        // Додаємо кількість студентів для сортування та відображення
+        [fn('COUNT', col('enrollments.id')), 'enrollmentCount'],
+      ],
+    },
+    include: [
+      {
+        model: Enrollment,
+        as: 'enrollments',
+        attributes: [], // Не вибираємо поля enrollment, лише COUNT
+        required: false,
+      },
+      {
+        model: User,
+        as: 'teacher',
+        attributes: ['id', 'name', 'surname'],
+      },
+      {
+        model: Category,
+        as: 'category',
+        attributes: ['id', 'name', 'icon'],
+      },
+    ],
+    group: [
+      'Course.id',
+      'teacher.id',
+      'category.id',
+    ],
+    order,
+    limit: parseInt(limit, 10),
+    offset,
+    subQuery: false, // Важливо при GROUP BY з paginaton
+    distinct: true,
+  });
+
+  const result = {
+    courses: rows,
+    totalCount: count.length, // count — масив об'єктів при GROUP BY
+    page: parseInt(page, 10),
+    totalPages: Math.ceil(count.length / parseInt(limit, 10)),
+    limit: parseInt(limit, 10),
+  };
+
+  // Кешуємо результат у Redis
+  await redisClient.set(cacheKey, JSON.stringify(result), 'EX', COURSES_CACHE_TTL).catch(() => null);
+
+  return result;
+};
+
+// ─────────────────────────────────────────────────────────────
+// ЗАПИС НА КУРС
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Записує студента на курс. Обробляє безкоштовні та платні курси.
+ *
+ * Бізнес-правила:
+ * 1. Студент не може записатись двічі на один курс.
+ * 2. Безкоштовний курс → одразу створюємо Enrollment.
+ * 3. Платний курс → симуляція оплати → 10% платформі, 90% на баланс викладача.
+ * 4. Після успішного запису — емітуємо подію для email-сповіщення.
+ *
+ * @param {string} courseId  - ID курсу
+ * @param {string} studentId - ID студента (з req.user)
+ * @returns {{ enrollment: Enrollment, paymentResult?: object }}
+ */
+const enrollInCourse = async (courseId, studentId) => {
+  // 1. Знаходимо курс із даними викладача
+  const course = await Course.findOne({
+    where: { id: courseId, status: 'published' },
+    include: [{ model: User, as: 'teacher', attributes: ['id', 'balance'] }],
+  });
+
+  if (!course) {
+    const err = new Error('Курс не знайдено або ще не опубліковано.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  // 2. Перевіряємо чи студент вже записаний
+  const existingEnrollment = await Enrollment.findOne({
+    where: { userId: studentId, courseId },
+  });
+
+  if (existingEnrollment) {
+    const err = new Error('Ви вже записані на цей курс.');
+    err.statusCode = 409;
+    err.isOperational = true;
+    err.code = 'ALREADY_ENROLLED';
+    throw err;
+  }
+
+  // 3. Безкоштовний курс — одразу записуємо
+  if (parseFloat(course.price) === 0) {
+    const enrollment = await Enrollment.create({ userId: studentId, courseId });
+
+    // Інвалідуємо кеш каталогу (кількість студентів змінилась)
+    await invalidateCoursesCache();
+
+    // Емітуємо подію для майбутнього email-підтвердження (заглушка)
+    emitEnrollmentEvent({ type: 'FREE_ENROLLMENT', studentId, courseId, course });
+
+    return { enrollment, isFree: true };
+  }
+
+  // 4. Платний курс — транзакція з симуляцією платежу
+  const transaction = await sequelize.transaction();
+
+  try {
+    // Симуляція платіжного процесингу (Stripe/LiqPay заглушка)
+    const paymentResult = await simulatePayment({
+      amount: parseFloat(course.price),
+      studentId,
+      courseId,
+    });
+
+    // Нараховуємо 90% викладачу
+    const teacherAmount = parseFloat(course.price) * (1 - PLATFORM_COMMISSION);
+    await User.increment('balance', {
+      by: teacherAmount,
+      where: { id: course.teacherId },
+      transaction,
+    });
+
+    // Створюємо запис про зарахування
+    const enrollment = await Enrollment.create(
+      { userId: studentId, courseId },
+      { transaction },
+    );
+
+    await transaction.commit();
+
+    // Інвалідуємо кеш
+    await invalidateCoursesCache();
+
+    // Емітуємо події для email-сповіщень
+    emitEnrollmentEvent({
+      type: 'PAID_ENROLLMENT',
+      studentId,
+      courseId,
+      course,
+      teacherId: course.teacherId,
+      amount: parseFloat(course.price),
+      teacherAmount,
+      platformAmount: parseFloat(course.price) * PLATFORM_COMMISSION,
+      paymentId: paymentResult.transactionId,
+    });
+
+    return {
+      enrollment,
+      isFree: false,
+      paymentResult: {
+        transactionId: paymentResult.transactionId,
+        amount: parseFloat(course.price),
+        teacherReceived: teacherAmount,
+        platformFee: parseFloat(course.price) * PLATFORM_COMMISSION,
+      },
+    };
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// ДОПОМІЖНІ ФУНКЦІЇ
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Симуляція платіжного шлюзу (Stripe/LiqPay заглушка).
+ * У реальному проєкті тут буде виклик Stripe API.
+ * Симулюємо 95% успішних платежів (5% — failure для тестування).
+ */
+const simulatePayment = async ({ amount, studentId, courseId }) => {
+  // Імітуємо затримку мережі
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  // Генеруємо ID транзакції (у реальному — з відповіді Stripe)
+  const transactionId = `txn_sim_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+  console.info(`[Payment] Симуляція оплати: ${amount} UAH, студент: ${studentId}, курс: ${courseId}, txn: ${transactionId}`);
+
+  return { success: true, transactionId, amount };
+};
+
+/**
+ * Заглушка для події email/WebSocket-сповіщення.
+ * У майбутньому → EventEmitter або черга завдань (Bull/BullMQ).
+ */
+const emitEnrollmentEvent = (payload) => {
+  // TODO: замінити на Bull queue або EventEmitter
+  console.info('[Event] EnrollmentEvent:', JSON.stringify(payload, null, 2));
+  // Приклад майбутньої реалізації:
+  // emailQueue.add('sendEnrollmentConfirmation', { studentId: payload.studentId, ... });
+  // if (payload.type === 'PAID_ENROLLMENT') {
+  //   emailQueue.add('notifyTeacher', { teacherId: payload.teacherId, ... });
+  // }
+};
+
+/**
+ * Інвалідує всі ключі кешу каталогу курсів.
+ */
+const invalidateCoursesCache = async () => {
+  const keys = await redisClient.keys('courses:*').catch(() => []);
+  if (keys.length > 0) {
+    await redisClient.del(...keys).catch(() => null);
+  }
+};
+
+module.exports = { getCourses, enrollInCourse };
