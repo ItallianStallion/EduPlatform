@@ -1,5 +1,6 @@
 // src/controllers/auth.controller.js
 // HTTP-шар авторизації. Контролер лише валідує вхід та викликає сервіс.
+// Вся логіка — у auth.service.js.
 
 'use strict';
 
@@ -107,8 +108,8 @@ const register = async (req, res, next) => {
       return res.status(422).json({ success: false, errors: errors.array() });
     }
 
-    const { name, surname, email, password } = req.body;
-    const user = await authService.register(name, surname, email, password);
+    const { name, surname, email, password, role } = req.body;
+    const user = await authService.register(name, surname, email, password, role);
 
     return res.status(201).json({
       success: true,

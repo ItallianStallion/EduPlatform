@@ -28,6 +28,7 @@ const generateTokens = (payload) => {
 /**
  * Зберігає refresh-токен у Redis з TTL 7 днів.
  * Ключ: refresh:{userId} — якщо користувач логується з нового пристрою,
+ * старий токен перезаписується (single-session підхід для MVP).
  */
 const saveRefreshToken = async (userId, refreshToken) => {
   const ttl = 7 * 24 * 60 * 60; // 7 днів у секундах
@@ -183,7 +184,18 @@ const logout = async (userId) => {
   await redisClient.del(`refresh:${userId}`);
 };
 
-const register = async (name, surname, email, password) => {
+/**
+ * Реєстрація нового користувача.
+ * ВАЖЛИВО: через публічну реєстрацію дозволені лише ролі 'student' та 'teacher'.
+ * Роль 'admin' може призначити лише інший admin через окремий ендпоінт.
+ *
+ * @param {string} name
+ * @param {string} surname
+ * @param {string} email
+ * @param {string} password
+ * @param {string} [role='student'] - 'student' | 'teacher'
+ */
+const register = async (name, surname, email, password, role = 'student') => {
   const existing = await User.findOne({ where: { email: email.toLowerCase().trim() } });
   if (existing) {
     const err = new Error('Цей email вже зареєстровано.');
@@ -192,6 +204,10 @@ const register = async (name, surname, email, password) => {
     throw err;
   }
 
+  // Захист: публічна реєстрація не може створити admin-акаунт
+  const allowedRoles = ['student', 'teacher'];
+  const safeRole = allowedRoles.includes(role) ? role : 'student';
+
   const passwordHash = await bcrypt.hash(password, 12);
 
   const user = await User.create({
@@ -199,11 +215,10 @@ const register = async (name, surname, email, password) => {
     surname,
     email: email.toLowerCase().trim(),
     passwordHash,
-    role: 'student',
+    role: safeRole,
   });
 
   return user.toSafeJSON();
 };
 
 module.exports = { login, refreshAccessToken, logout, register };
-

@@ -1,5 +1,5 @@
 // src/routes/auth.routes.js
-// Маршрути авторизації.  
+// Маршрути авторизації.
 
 'use strict';
 
@@ -11,13 +11,33 @@ const { authenticate } = require('../middleware/auth');
 const router = Router();
 
 /**
+ * POST /api/v1/auth/register
+ * Реєстрація нового користувача.
+ * Body: { name, surname, email, password, role? }
+ * role: 'student' (default) | 'teacher'. 'admin' заборонено через публічну реєстрацію.
+ */
+router.post(
+  '/register',
+  [
+    body('name').trim().notEmpty().withMessage("Ім'я обов'язкове"),
+    body('surname').trim().notEmpty().withMessage("Прізвище обов'язкове"),
+    body('email').trim().isEmail().withMessage('Невірний email').normalizeEmail(),
+    body('password').isLength({ min: 6 }).withMessage('Пароль мінімум 6 символів'),
+    body('role')
+      .optional()
+      .isIn(['student', 'teacher'])
+      .withMessage("role повинен бути 'student' або 'teacher'"),
+  ],
+  authController.register,
+);
+
+/**
  * POST /api/v1/auth/login
  * Вхід у систему.
  * Body: { email: string, password: string }
  */
 router.post(
   '/login',
-  // Валідація вхідних даних
   [
     body('email')
       .trim()
@@ -26,24 +46,11 @@ router.post(
       .normalizeEmail(),
     body('password')
       .notEmpty()
-      .withMessage('Пароль обов\'язковий')
+      .withMessage("Пароль обов'язковий")
       .isLength({ min: 6 })
       .withMessage('Пароль повинен містити мінімум 6 символів'),
   ],
   authController.login,
-);
-
-router.post(
-  '/register',
-  [
-    body('name').trim().notEmpty().withMessage("Ім'я обов'язкове"),
-    body('surname').trim().notEmpty().withMessage('Прізвище обов\'язкове'),
-    body('email').trim().isEmail().withMessage('Невірний email').normalizeEmail(),
-    body('password')
-      .isLength({ min: 6 })
-      .withMessage('Пароль мінімум 6 символів'),
-  ],
-  authController.register,
 );
 
 /**

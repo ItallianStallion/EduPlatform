@@ -1,6 +1,5 @@
 // src/services/course.service.js
 // Бізнес-логіка: каталог курсів, пошук, фільтрація, запис на курс.
-//  
 
 'use strict';
 
@@ -304,4 +303,201 @@ const invalidateCoursesCache = async () => {
   }
 };
 
-module.exports = { getCourses, enrollInCourse };
+// ─────────────────────────────────────────────────────────────
+// ВИКЛАДАЧ: СТВОРЕННЯ, РЕДАГУВАННЯ, ПУБЛІКАЦІЯ КУРСІВ
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Створює новий курс. Курс завжди стартує зі статусом 'draft'.
+ *
+ * @param {string} teacherId - ID викладача (з req.user)
+ * @param {object} data - { title, description, categoryId, price, coverImage }
+ */
+const createCourse = async (teacherId, data) => {
+  const { title, description, categoryId, price, coverImage } = data;
+
+  // Якщо вказана категорія — перевіряємо що вона існує
+  if (categoryId) {
+    const category = await Category.findByPk(categoryId);
+    if (!category) {
+      const err = new Error('Вказана категорія не знайдена.');
+      err.statusCode = 404;
+      err.isOperational = true;
+      throw err;
+    }
+  }
+
+  const course = await Course.create({
+    teacherId,
+    categoryId: categoryId || null,
+    title,
+    description: description || null,
+    coverImage: coverImage || null,
+    price: price || 0,
+    status: 'draft', // Завжди стартує як чернетка
+  });
+
+  return course;
+};
+
+/**
+ * Редагує курс. Дозволено лише власнику курсу.
+ *
+ * @param {string} courseId
+ * @param {string} teacherId - ID викладача, що робить запит
+ * @param {object} updates - поля для оновлення
+ */
+const updateCourse = async (courseId, teacherId, updates) => {
+  const course = await Course.findByPk(courseId);
+
+  if (!course) {
+    const err = new Error('Курс не знайдено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  // Перевірка власності: тільки автор курсу може редагувати
+  if (course.teacherId !== teacherId) {
+    const err = new Error('Ви не можете редагувати курс, який вам не належить.');
+    err.statusCode = 403;
+    err.isOperational = true;
+    throw err;
+  }
+
+  // Дозволені поля для оновлення (захист від масового присвоєння)
+  const allowedFields = ['title', 'description', 'categoryId', 'price', 'coverImage'];
+  const safeUpdates = {};
+  allowedFields.forEach((field) => {
+    if (updates[field] !== undefined) {
+      safeUpdates[field] = updates[field];
+    }
+  });
+
+  await course.update(safeUpdates);
+  await invalidateCoursesCache();
+
+  return course;
+};
+
+/**
+ * Перемикає статус курсу draft <-> published.
+ * Перед публікацією перевіряє що курс має мінімально необхідні дані.
+ *
+ * @param {string} courseId
+ * @param {string} teacherId
+ * @param {string} action - 'publish' | 'unpublish'
+ */
+const setCourseStatus = async (courseId, teacherId, action) => {
+  const course = await Course.findByPk(courseId);
+
+  if (!course) {
+    const err = new Error('Курс не знайдено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  if (course.teacherId !== teacherId) {
+    const err = new Error('Ви не можете публікувати курс, який вам не належить.');
+    err.statusCode = 403;
+    err.isOperational = true;
+    throw err;
+  }
+
+  if (action === 'publish') {
+    // Базова перевірка перед публікацією
+    if (!course.title || course.title.trim().length < 5) {
+      const err = new Error('Курс повинен мати назву мінімум 5 символів перед публікацією.');
+      err.statusCode = 422;
+      err.isOperational = true;
+      throw err;
+    }
+    await course.update({ status: 'published' });
+  } else {
+    await course.update({ status: 'draft' });
+  }
+
+  await invalidateCoursesCache();
+  return course;
+};
+
+/**
+ * Повертає всі курси конкретного викладача (включно з draft).
+ *
+ * @param {string} teacherId
+ */
+const getMyCourses = async (teacherId) => {
+  const courses = await Course.findAll({
+    where: { teacherId },
+    include: [
+      { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
+      {
+        model: Enrollment,
+        as: 'enrollments',
+        attributes: [],
+      },
+    ],
+    attributes: {
+      include: [[fn('COUNT', col('enrollments.id')), 'enrollmentCount']],
+    },
+    group: ['Course.id', 'category.id'],
+    order: [['createdAt', 'DESC']],
+    subQuery: false,
+  });
+
+  return courses;
+};
+
+/**
+ * Повертає деталі одного курсу за ID.
+ * Якщо курс — draft, доступ має лише власник.
+ *
+ * @param {string} courseId
+ * @param {object} [requester] - { id, role } поточного користувача (опціонально)
+ */
+const getCourseById = async (courseId, requester = null) => {
+  const course = await Course.findOne({
+    where: { id: courseId },
+    include: [
+      { model: User, as: 'teacher', attributes: ['id', 'name', 'surname'] },
+      { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
+      { model: Enrollment, as: 'enrollments', attributes: [] },
+    ],
+    attributes: {
+      include: [[fn('COUNT', col('enrollments.id')), 'enrollmentCount']],
+    },
+    group: ['Course.id', 'teacher.id', 'category.id'],
+    subQuery: false,
+  });
+
+  if (!course) {
+    const err = new Error('Курс не знайдено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  // Чернетку (draft) бачить лише автор
+  if (course.status === 'draft') {
+    const isOwner = requester && requester.id === course.teacherId;
+    if (!isOwner) {
+      const err = new Error('Курс не знайдено.'); // Не розкриваємо що курс існує
+      err.statusCode = 404;
+      err.isOperational = true;
+      throw err;
+    }
+  }
+
+  return course;
+};
+
+module.exports = {
+  getCourses,
+  enrollInCourse,
+  createCourse,
+  updateCourse,
+  setCourseStatus,
+  getMyCourses,
+  getCourseById,
+};

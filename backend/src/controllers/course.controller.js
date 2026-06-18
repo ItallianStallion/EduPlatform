@@ -93,4 +93,132 @@ const enrollInCourse = async (req, res, next) => {
   }
 };
 
-module.exports = { getCourses, enrollInCourse };
+/**
+ * POST /api/v1/courses
+ * Створення нового курсу. Тільки для викладачів.
+ * Body: { title, description, categoryId, price, coverImage }
+ */
+const createCourse = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, errors: errors.array() });
+    }
+
+    const teacherId = req.user.id;
+    const course = await courseService.createCourse(teacherId, req.body);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Курс створено як чернетка. Опублікуйте його, коли будете готові.',
+      data: { course },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/courses/:id
+ * Редагування курсу. Тільки власник-викладач.
+ */
+const updateCourse = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, errors: errors.array() });
+    }
+
+    const course = await courseService.updateCourse(req.params.id, req.user.id, req.body);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Курс оновлено.',
+      data: { course },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/courses/:id/publish
+ * Публікує курс (draft → published).
+ */
+const publishCourse = async (req, res, next) => {
+  try {
+    const course = await courseService.setCourseStatus(req.params.id, req.user.id, 'publish');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Курс опубліковано! Тепер він видимий студентам.',
+      data: { course },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/courses/:id/unpublish
+ * Знімає курс з публікації (published → draft).
+ */
+const unpublishCourse = async (req, res, next) => {
+  try {
+    const course = await courseService.setCourseStatus(req.params.id, req.user.id, 'unpublish');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Курс знято з публікації.',
+      data: { course },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * GET /api/v1/courses/my
+ * Повертає всі курси поточного викладача (включно з draft).
+ */
+const getMyCourses = async (req, res, next) => {
+  try {
+    const courses = await courseService.getMyCourses(req.user.id);
+
+    return res.status(200).json({
+      success: true,
+      data: { courses },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * GET /api/v1/courses/:id
+ * Деталі одного курсу.
+ */
+const getCourseById = async (req, res, next) => {
+  try {
+    // req.user може бути відсутній (публічний доступ для published курсів)
+    const course = await courseService.getCourseById(req.params.id, req.user || null);
+
+    return res.status(200).json({
+      success: true,
+      data: { course },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+module.exports = {
+  getCourses,
+  enrollInCourse,
+  createCourse,
+  updateCourse,
+  publishCourse,
+  unpublishCourse,
+  getMyCourses,
+  getCourseById,
+};
