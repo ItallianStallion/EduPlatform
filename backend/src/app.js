@@ -17,9 +17,11 @@ const courseRoutes = require('./routes/course.routes');
 const adminRoutes = require('./routes/admin.routes');
 
 // --- Маршрути (Dev #2) ---
-// const profileRoutes = require('./routes/profile.routes');
-// const lessonRoutes  = require('./routes/lesson.routes');
-// const progressRoutes = require('./routes/progress.routes');
+const profileRoutes  = require('./routes/Profile.routes');
+const lessonRoutes   = require('./routes/Lesson.routes');
+const progressRoutes = require('./routes/Progress.routes');
+const testRoutes     = require('./routes/Test.routes');
+const analyticsRoutes = require('./routes/Analytics.routes');
 
 const app = express();
 
@@ -73,10 +75,12 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/courses', courseRoutes);
 app.use('/api/v1/admin', adminRoutes); 
 
-// Маршрути колеги (розкоментуй після мержу їх PR):
-// app.use('/api/v1/profiles',  profileRoutes);
-// app.use('/api/v1/lessons',   lessonRoutes);
-// app.use('/api/v1/progress',  progressRoutes);
+// --- Маршрути (Dev #2) ---
+app.use('/api/v1/profiles',   profileRoutes);
+app.use('/api/v1/lessons',    lessonRoutes);
+app.use('/api/v1/progress',   progressRoutes);
+app.use('/api/v1/tests',      testRoutes);
+app.use('/api/v1/analytics',  analyticsRoutes);
 
 // ─────────────────────────────────────────────────────────────
 // 5. 404 HANDLER

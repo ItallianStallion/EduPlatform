@@ -10,12 +10,12 @@ const Course = require('./Course');
 const Enrollment = require('./Enrollment');
 
 // ─────────────────────────────────────────────────────────────
-// Моделі Dev #2;
-// const UserProfile = require('./UserProfile');
-// const Lesson = require('./Lesson');
-// const Progress = require('./Progress');
-// const Test = require('./Test');
+// Моделі Dev #2
 // ─────────────────────────────────────────────────────────────
+const UserProfile = require('./UserProfile');
+const Lesson      = require('./Lesson');
+const Progress    = require('./Progress');
+const Test        = require('./Test');
 
 // --- User ↔ Course (викладач є автором багатьох курсів) ---
 User.hasMany(Course, {
@@ -60,10 +60,22 @@ Enrollment.belongsTo(User, { foreignKey: 'userId', as: 'student' });
 Course.hasMany(Enrollment, { foreignKey: 'courseId', as: 'enrollments' });
 Enrollment.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 
-// --- Зв'язки Dev #2  ---
-// User.hasOne(UserProfile, { foreignKey: 'userId', as: 'profile', onDelete: 'CASCADE' });
-// UserProfile.belongsTo(User, { foreignKey: 'userId', as: 'user' });
-// Course.hasMany(Lesson, { foreignKey: 'courseId', as: 'lessons', onDelete: 'CASCADE' });
-// Lesson.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+// --- Зв'язки Dev #2 ---
+User.hasOne(UserProfile, { foreignKey: 'userId', as: 'profile', onDelete: 'CASCADE' });
+UserProfile.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
-module.exports = { User, Category, Course, Enrollment };
+Course.hasMany(Lesson, { foreignKey: 'courseId', as: 'lessons', onDelete: 'CASCADE' });
+Lesson.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+
+// Progress: студент ↔ урок (який урок пройдено)
+User.hasMany(Progress, { foreignKey: 'userId', as: 'progress' });
+Progress.belongsTo(User, { foreignKey: 'userId', as: 'student' });
+
+Lesson.hasMany(Progress, { foreignKey: 'lessonId', as: 'progress', onDelete: 'CASCADE' });
+Progress.belongsTo(Lesson, { foreignKey: 'lessonId', as: 'lesson' });
+
+// Test: курс має один тест
+Course.hasOne(Test, { foreignKey: 'courseId', as: 'test', onDelete: 'CASCADE' });
+Test.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+
+module.exports = { User, Category, Course, Enrollment, UserProfile, Lesson, Progress, Test };
