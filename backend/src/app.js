@@ -14,6 +14,7 @@ require('dotenv').config();
 // --- Маршрути (Dev #1) ---
 const authRoutes = require('./routes/auth.routes');
 const courseRoutes = require('./routes/course.routes');
+const adminRoutes = require('./routes/admin.routes');
 
 // --- Маршрути (Dev #2) ---
 // const profileRoutes = require('./routes/profile.routes');
@@ -70,6 +71,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/courses', courseRoutes);
+app.use('/api/v1/admin', adminRoutes); 
 
 // Маршрути колеги (розкоментуй після мержу їх PR):
 // app.use('/api/v1/profiles',  profileRoutes);
