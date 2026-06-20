@@ -11,7 +11,7 @@ const authService = require('../services/auth.service');
 const COOKIE_OPTIONS_BASE = {
   httpOnly: true,     // Недоступно через document.cookie (захист від XSS)
   secure: process.env.NODE_ENV === 'production', // HTTPS тільки у prod
-  sameSite: 'strict', // Захист від CSRF
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict', // Захист від CSRF
 };
 
 /**
