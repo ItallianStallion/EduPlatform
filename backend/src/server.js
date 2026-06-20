@@ -16,11 +16,10 @@ async function startServer() {
     await sequelize.authenticate();
     console.info('[DB] PostgreSQL підключено успішно');
 
-    // Синхронізація моделей (тільки у dev — у prod використовуй міграції!)
-    if (process.env.NODE_ENV === 'development') {
-      await sequelize.sync({ alter: true });
-      console.info('[DB] Моделі синхронізовано (alter mode)');
-    }
+    // Синхронізація моделей. У проєкту ще немає окремих міграцій,
+    // тому sync() створює/оновлює таблиці автоматично при кожному старті.
+    await sequelize.sync({ alter: true });
+    console.info('[DB] Моделі синхронізовано (alter mode)');
 
     // Перевіряємо підключення до Redis
     await redisClient.ping();
