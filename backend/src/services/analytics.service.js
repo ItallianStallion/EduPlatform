@@ -3,7 +3,7 @@
 
 'use strict';
 
-const { fn, col } = require('sequelize');
+const { fn, col, Op } = require('sequelize');
 const { Course, User, Lesson, Enrollment, Progress, Category } = require('../models');
 
 // ─────────────────────────────────────────────────────────────
@@ -66,22 +66,23 @@ const getCourseAnalytics = async (courseId, teacherId) => {
   // Середній прогрес студентів (% пройдених уроків)
   let averageProgress = 0;
   if (totalStudents > 0 && totalLessons > 0) {
+    // Отримуємо id уроків курсу, щоб уникнути проблемного JOIN з GROUP BY у PostgreSQL
+    const courseLessonIds = await Lesson.findAll({
+      where: { courseId },
+      attributes: ['id'],
+      raw: true,
+    }).then((rows) => rows.map((r) => r.id));
+
     const completedRows = await Progress.findAll({
-      where: { completed: true },
-      include: [
-        {
-          model: Lesson,
-          as: 'lesson',
-          attributes: [],
-          where: { courseId },
-          required: true,
-        },
-      ],
+      where: {
+        completed: true,
+        lessonId: { [Op.in]: courseLessonIds },
+      },
       attributes: [
-        'userId',
+        [col('Progress.user_id'), 'userId'],
         [fn('COUNT', col('Progress.id')), 'completedCount'],
       ],
-      group: ['Progress.userId'],
+      group: [col('Progress.user_id')],
       raw: true,
     });
 
@@ -157,20 +158,22 @@ const getCourseStudentsProgress = async (courseId, teacherId) => {
 
   const userIds = enrollments.map((e) => e.userId);
 
+  // Отримуємо id уроків курсу, щоб уникнути проблемного JOIN з GROUP BY у PostgreSQL
+  const courseLessonIds = await Lesson.findAll({
+    where: { courseId },
+    attributes: ['id'],
+    raw: true,
+  }).then((rows) => rows.map((r) => r.id));
+
   // Прогрес по всіх студентах одним запитом
   const progressRows = await Progress.findAll({
-    where: { userId: userIds, completed: true },
-    include: [
-      {
-        model: Lesson,
-        as: 'lesson',
-        attributes: [],
-        where: { courseId },
-        required: true,
-      },
-    ],
-    attributes: ['userId', [fn('COUNT', col('Progress.id')), 'completedCount']],
-    group: ['Progress.userId'],
+    where: {
+      userId: { [Op.in]: userIds },
+      completed: true,
+      lessonId: { [Op.in]: courseLessonIds },
+    },
+    attributes: [[col('Progress.user_id'), 'userId'], [fn('COUNT', col('Progress.id')), 'completedCount']],
+    group: [col('Progress.user_id')],
     raw: true,
   });
 

@@ -180,10 +180,16 @@ const refreshAccessToken = async (refreshToken) => {
 /**
  * Видаляє refresh-токен з Redis (інвалідує сесію).
  */
-const logout = async (userId) => {
+const logout = async (userId, accessToken) => {
   await redisClient.del(`refresh:${userId}`);
+ const decoded = jwt.decode(accessToken);
+  if (decoded?.exp) {
+    const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+    if (ttl > 0) {
+      await redisClient.set(`blacklist:${accessToken}`, '1', 'EX', ttl);
+    }
+  }
 };
-
 /**
  * Реєстрація нового користувача.
  * ВАЖЛИВО: через публічну реєстрацію дозволені лише ролі 'student' та 'teacher'.

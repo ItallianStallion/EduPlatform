@@ -6,7 +6,7 @@
 const { Router } = require('express');
 const { query, param, body } = require('express-validator');
 const courseController = require('../controllers/course.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { checkRole } = require('../middleware/checkRole');
 
 const router = Router();
@@ -73,7 +73,7 @@ router.post(
  * Деталі одного курсу. Публічний для published, приватний для draft (тільки автор).
  */
 router.get(
-  '/:id',
+  '/:id',  optionalAuthenticate, 
   [param('id').isUUID(4).withMessage('Невірний формат ID курсу')],
   courseController.getCourseById,
 );

@@ -87,8 +87,9 @@ const refresh = async (req, res, next) => {
 const logout = async (req, res, next) => {
   try {
     // req.user встановлюється middleware authenticate
+     const accessToken = req.cookies?.accessToken;
     if (req.user?.id) {
-      await authService.logout(req.user.id);
+       await authService.logout(req.user.id, accessToken);
     }
 
     // Очищуємо cookies

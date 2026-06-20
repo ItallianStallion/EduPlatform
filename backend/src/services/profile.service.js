@@ -18,7 +18,7 @@ const { User, UserProfile } = require('../models');
  */
 const getProfile = async (userId) => {
   const user = await User.findByPk(userId, {
-    attributes: ['id', 'name', 'surname', 'role', 'createdAt'],
+    attributes: ['id', 'name', 'surname', 'email', 'role', 'createdAt'],
     include: [
       {
         model: UserProfile,

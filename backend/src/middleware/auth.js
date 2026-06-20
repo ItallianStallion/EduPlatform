@@ -1,20 +1,13 @@
 // src/middleware/auth.js
-// Middleware перевірки JWT access-токена з httpOnly cookie.
-// Додає req.user = { id, email, role } для наступних обробників.
 
 'use strict';
 
 const jwt = require('jsonwebtoken');
+const { redisClient } = require('../config/redis'); // ← імпорт Redis
 
-/**
- * Перевіряє access JWT з cookie або Authorization header.
- * При успіху — додає req.user, при невдачі — повертає 401.
- */
-const authenticate = (req, res, next) => {
-  // 1. Пробуємо витягти токен з httpOnly cookie (пріоритет)
+const authenticate = async (req, res, next) => { // ← async обов'язково
   let token = req.cookies?.accessToken;
 
-  // 2. Fallback: Bearer token з Authorization header (для мобільних клієнтів)
   if (!token) {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -31,7 +24,13 @@ const authenticate = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-    // Зберігаємо payload у запиті (id, email, role)
+
+    // ← перевірка blacklist (для logout)
+    const isBlacklisted = await redisClient.get(`blacklist:${token}`);
+    if (isBlacklisted) {
+      return res.status(401).json({ success: false, message: 'Токен інвалідований.' });
+    }
+
     req.user = decoded;
     return next();
   } catch (err) {
@@ -49,4 +48,17 @@ const authenticate = (req, res, next) => {
   }
 };
 
-module.exports = { authenticate };
+const optionalAuthenticate = (req, res, next) => {
+  let token = req.cookies?.accessToken;
+  if (!token) {
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) token = authHeader.split(' ')[1];
+  }
+  if (!token) return next();
+  try {
+    req.user = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+  } catch { /* ігноруємо */ }
+  return next();
+};
+
+module.exports = { authenticate, optionalAuthenticate };
