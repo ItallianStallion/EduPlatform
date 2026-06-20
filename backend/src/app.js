@@ -71,9 +71,12 @@ app.get('/api/health', (_req, res) => {
 // 4. ROUTES
 // ─────────────────────────────────────────────────────────────
 
+const categoryRoutes = require('./routes/category.routes');
+
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/courses', courseRoutes);
-app.use('/api/v1/admin', adminRoutes); 
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/categories', categoryRoutes); 
 
 // --- Маршрути (Dev #2) ---
 app.use('/api/v1/profiles',   profileRoutes);
