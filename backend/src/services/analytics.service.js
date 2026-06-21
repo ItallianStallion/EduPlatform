@@ -4,7 +4,13 @@
 'use strict';
 
 const { fn, col, Op } = require('sequelize');
-const { Course, User, Lesson, Enrollment, Progress, Category } = require('../models');
+const { Course, User, Lesson, Enrollment, Progress, Category, Test, Result } = require('../models');
+
+// Вага уроків і тесту у зваженому % завершення курсу.
+// Узгоджено з src/services/progress.service.js — щоб викладач і студент
+// бачили однакові цифри прогресу.
+const LESSONS_WEIGHT = 70;
+const TEST_WEIGHT = 30;
 
 // ─────────────────────────────────────────────────────────────
 // ДОПОМІЖНА ФУНКЦІЯ
@@ -63,35 +69,77 @@ const getCourseAnalytics = async (courseId, teacherId) => {
   // Загальна кількість уроків
   const totalLessons = await Lesson.count({ where: { courseId } });
 
-  // Середній прогрес студентів (% пройдених уроків)
+  // Чи має курс тест взагалі
+  const test = await Test.findOne({ where: { courseId }, attributes: ['id'] });
+
+  // Середній прогрес студентів (зважено: 70% уроки + 30% тест, як і у
+  // студентському progress.service.js, щоб цифри не розходилися)
   let averageProgress = 0;
-  if (totalStudents > 0 && totalLessons > 0) {
-    // Отримуємо id уроків курсу, щоб уникнути проблемного JOIN з GROUP BY у PostgreSQL
+  let studentsPassedTest = 0;
+  let studentsCompletedCourse = 0;
+
+  if (totalStudents > 0) {
+    // Кількість пройдених уроків по кожному студенту
     const courseLessonIds = await Lesson.findAll({
       where: { courseId },
       attributes: ['id'],
       raw: true,
     }).then((rows) => rows.map((r) => r.id));
 
-    const completedRows = await Progress.findAll({
-      where: {
-        completed: true,
-        lessonId: { [Op.in]: courseLessonIds },
-      },
-      attributes: [
-        [col('Progress.user_id'), 'userId'],
-        [fn('COUNT', col('Progress.id')), 'completedCount'],
-      ],
-      group: [col('Progress.user_id')],
-      raw: true,
+    const completedRows =
+      totalLessons > 0
+        ? await Progress.findAll({
+            where: {
+              completed: true,
+              lessonId: { [Op.in]: courseLessonIds },
+            },
+            attributes: [
+              [col('Progress.user_id'), 'userId'],
+              [fn('COUNT', col('Progress.id')), 'completedCount'],
+            ],
+            group: [col('Progress.user_id')],
+            raw: true,
+          })
+        : [];
+
+    const completedLessonsMap = {};
+    completedRows.forEach((row) => {
+      completedLessonsMap[row.userId] = parseInt(row.completedCount, 10);
     });
 
-    const totalCompleted = completedRows.reduce(
-      (sum, row) => sum + parseInt(row.completedCount, 10),
-      0,
-    );
-    // Середній % по всіх студентах
-    averageProgress = Math.round((totalCompleted / (totalStudents * totalLessons)) * 100);
+    // Хто з зарахованих студентів вже склав тест (якщо тест є)
+    let passedUserIds = new Set();
+    if (test) {
+      const passedResults = await Result.findAll({
+        where: { testId: test.id, passed: true },
+        attributes: ['userId'],
+        group: ['userId'],
+        raw: true,
+      });
+      passedUserIds = new Set(passedResults.map((r) => r.userId));
+    }
+
+    const enrolledUserIds = await Enrollment.findAll({
+      where: { courseId },
+      attributes: ['userId'],
+      raw: true,
+    }).then((rows) => rows.map((r) => r.userId));
+
+    let percentageSum = 0;
+    enrolledUserIds.forEach((userId) => {
+      const completed = completedLessonsMap[userId] || 0;
+      const allLessonsDone = totalLessons > 0 && completed === totalLessons;
+      const lessonsPart =
+        totalLessons > 0 ? (completed / totalLessons) * LESSONS_WEIGHT : LESSONS_WEIGHT;
+      const testPassed = test ? passedUserIds.has(userId) : false;
+      const testPart = !test ? TEST_WEIGHT : testPassed ? TEST_WEIGHT : 0;
+
+      percentageSum += lessonsPart + testPart;
+      if (testPassed) studentsPassedTest += 1;
+      if (allLessonsDone && (!test || testPassed)) studentsCompletedCourse += 1;
+    });
+
+    averageProgress = Math.round(percentageSum / totalStudents);
   }
 
   // Дохід від курсу (ціна × кількість студентів)
@@ -110,9 +158,14 @@ const getCourseAnalytics = async (courseId, teacherId) => {
     students: {
       total: totalStudents,
       lastEnrollmentAt,
+      completedCourse: studentsCompletedCourse,
+      passedTest: studentsPassedTest,
     },
     lessons: {
       total: totalLessons,
+    },
+    test: {
+      hasTest: !!test,
     },
     progress: {
       averagePercentage: averageProgress,
@@ -139,6 +192,7 @@ const getCourseStudentsProgress = async (courseId, teacherId) => {
   await assertCourseOwner(courseId, teacherId);
 
   const totalLessons = await Lesson.count({ where: { courseId } });
+  const test = await Test.findOne({ where: { courseId }, attributes: ['id', 'passingScore'] });
 
   // Всі студенти курсу
   const enrollments = await Enrollment.findAll({
@@ -172,7 +226,10 @@ const getCourseStudentsProgress = async (courseId, teacherId) => {
       completed: true,
       lessonId: { [Op.in]: courseLessonIds },
     },
-    attributes: [[col('Progress.user_id'), 'userId'], [fn('COUNT', col('Progress.id')), 'completedCount']],
+    attributes: [
+      [col('Progress.user_id'), 'userId'],
+      [fn('COUNT', col('Progress.id')), 'completedCount'],
+    ],
     group: [col('Progress.user_id')],
     raw: true,
   });
@@ -182,9 +239,35 @@ const getCourseStudentsProgress = async (courseId, teacherId) => {
     progressMap[row.userId] = parseInt(row.completedCount, 10);
   });
 
+  // Результати тесту по всіх студентах курсу одним запитом
+  const bestScoreMap = {};
+  const passedMap = {};
+  const attemptsMap = {};
+  if (test) {
+    const results = await Result.findAll({
+      where: { userId: { [Op.in]: userIds }, testId: test.id },
+      attributes: ['userId', 'score', 'passed'],
+      raw: true,
+    });
+
+    results.forEach((r) => {
+      attemptsMap[r.userId] = (attemptsMap[r.userId] || 0) + 1;
+      if (r.passed) passedMap[r.userId] = true;
+      if (bestScoreMap[r.userId] === undefined || r.score > bestScoreMap[r.userId]) {
+        bestScoreMap[r.userId] = r.score;
+      }
+    });
+  }
+
   return enrollments.map((enrollment) => {
     const completed = progressMap[enrollment.userId] || 0;
-    const percentage = totalLessons > 0 ? Math.round((completed / totalLessons) * 100) : 0;
+    const allLessonsDone = totalLessons > 0 && completed === totalLessons;
+
+    const testPassed = test ? !!passedMap[enrollment.userId] : false;
+    const lessonsPart =
+      totalLessons > 0 ? (completed / totalLessons) * LESSONS_WEIGHT : LESSONS_WEIGHT;
+    const testPart = !test ? TEST_WEIGHT : testPassed ? TEST_WEIGHT : 0;
+    const percentage = Math.round(lessonsPart + testPart);
 
     return {
       student: enrollment.student,
@@ -192,7 +275,17 @@ const getCourseStudentsProgress = async (courseId, teacherId) => {
       completedLessons: completed,
       totalLessons,
       percentage,
-      isCompleted: percentage === 100,
+      allLessonsDone,
+      isCompleted: allLessonsDone && (!test || testPassed),
+      test: test
+        ? {
+            hasTest: true,
+            passed: testPassed,
+            bestScore: bestScoreMap[enrollment.userId] ?? null,
+            attemptsCount: attemptsMap[enrollment.userId] || 0,
+            passingScore: test.passingScore,
+          }
+        : { hasTest: false, passed: null, bestScore: null, attemptsCount: 0 },
     };
   });
 };
@@ -211,15 +304,19 @@ const getTeacherDashboard = async (teacherId) => {
   const courses = await Course.findAll({
     where: { teacherId },
     attributes: ['id', 'title', 'status', 'price', 'createdAt'],
-    include: [
-      { model: Category, as: 'category', attributes: ['id', 'name'] },
-    ],
+    include: [{ model: Category, as: 'category', attributes: ['id', 'name'] }],
     order: [['createdAt', 'DESC']],
   });
 
   if (courses.length === 0) {
     return {
-      summary: { totalCourses: 0, publishedCourses: 0, totalStudents: 0, totalRevenue: 0, teacherBalance: 0 },
+      summary: {
+        totalCourses: 0,
+        publishedCourses: 0,
+        totalStudents: 0,
+        totalRevenue: 0,
+        teacherBalance: 0,
+      },
       courses: [],
     };
   }
