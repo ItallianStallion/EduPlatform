@@ -36,6 +36,7 @@ router.post(
     body('title').trim().notEmpty().withMessage('Назва тесту обов\'язкова'),
     body('questions').isArray({ min: 1 }).withMessage('Потрібно хоча б одне питання'),
     body('passingScore').optional().isInt({ min: 0, max: 100 }),
+    body('maxAttempts').optional({ nullable: true }).isInt({ min: 1 }).withMessage('maxAttempts повинен бути цілим числом ≥ 1 (або не вказаний для необмеженої кількості)'),
   ],
   testController.createTest,
 );
@@ -65,6 +66,23 @@ router.post(
     body('answers').isArray({ min: 1 }).withMessage('Потрібен масив відповідей'),
   ],
   testController.submitTest,
+);
+
+/**
+ * PATCH /api/v1/tests/:id
+ * Редагування тесту. Тільки власник курсу.
+ * Body: { title?, questions?, passingScore?, maxAttempts? }
+ */
+router.patch(
+  '/:id',
+  authenticate,
+  checkRole('teacher'),
+  [
+    param('id').isUUID(4).withMessage('Невірний формат ID тесту'),
+    body('passingScore').optional().isInt({ min: 0, max: 100 }),
+    body('maxAttempts').optional({ nullable: true }).isInt({ min: 1 }),
+  ],
+  testController.updateTest,
 );
 
 module.exports = router;

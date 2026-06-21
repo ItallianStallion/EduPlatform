@@ -5,7 +5,7 @@
 
 const { Op, fn, col, literal } = require('sequelize');
 const { sequelize } = require('../config/database');
-const { Course, User, Category, Enrollment } = require('../models');
+const { Course, User, Category, Enrollment, Test } = require('../models');
 const { redisClient } = require('../config/redis');
 
 const COURSES_CACHE_TTL = 5 * 60; // 5 хвилин кешування каталогу
@@ -311,10 +311,10 @@ const invalidateCoursesCache = async () => {
  * Створює новий курс. Курс завжди стартує зі статусом 'draft'.
  *
  * @param {string} teacherId - ID викладача (з req.user)
- * @param {object} data - { title, description, categoryId, price, coverImage }
+ * @param {object} data - { title, description, categoryId, price, coverImage, accessMode? }
  */
 const createCourse = async (teacherId, data) => {
-  const { title, description, categoryId, price, coverImage } = data;
+  const { title, description, categoryId, price, coverImage, accessMode } = data;
 
   // Якщо вказана категорія — перевіряємо що вона існує
   if (categoryId) {
@@ -334,6 +334,7 @@ const createCourse = async (teacherId, data) => {
     description: description || null,
     coverImage: coverImage || null,
     price: price || 0,
+    accessMode: accessMode === 'sequential' ? 'sequential' : 'open',
     status: 'draft', // Завжди стартує як чернетка
   });
 
@@ -366,7 +367,7 @@ const updateCourse = async (courseId, teacherId, updates) => {
   }
 
   // Дозволені поля для оновлення (захист від масового присвоєння)
-  const allowedFields = ['title', 'description', 'categoryId', 'price', 'coverImage'];
+  const allowedFields = ['title', 'description', 'categoryId', 'price', 'coverImage', 'accessMode'];
   const safeUpdates = {};
   allowedFields.forEach((field) => {
     if (updates[field] !== undefined) {
@@ -413,6 +414,19 @@ const setCourseStatus = async (courseId, teacherId, action) => {
       err.isOperational = true;
       throw err;
     }
+
+    // Курс ОБОВ'ЯЗКОВО повинен мати фінальний тест перед публікацією
+    const finalTest = await Test.findOne({ where: { courseId } });
+    if (!finalTest) {
+      const err = new Error(
+        'Перед публікацією курсу потрібно створити фінальний тест.',
+      );
+      err.statusCode = 422;
+      err.isOperational = true;
+      err.code = 'TEST_REQUIRED';
+      throw err;
+    }
+
     await course.update({ status: 'published' });
   } else {
     await course.update({ status: 'draft' });

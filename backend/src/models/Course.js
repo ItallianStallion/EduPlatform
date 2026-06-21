@@ -46,6 +46,15 @@ const Course = sequelize.define(
       allowNull: false,
       defaultValue: 'draft',
     },
+    // Режим доступу до уроків курсу:
+    //  - 'open'       — студент бачить і відкриває будь-який урок одразу
+    //  - 'sequential' — урок N доступний лише після завершення уроку N-1,
+    //                   фінальний тест доступний лише після завершення ВСІХ уроків
+    accessMode: {
+      type: DataTypes.ENUM('open', 'sequential'),
+      allowNull: false,
+      defaultValue: 'open',
+    },
   },
   {
     tableName: 'courses',

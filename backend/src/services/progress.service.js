@@ -4,7 +4,7 @@
 'use strict';
 
 const { fn, col } = require('sequelize');
-const { Course, Lesson, Progress, Enrollment, Category } = require('../models');
+const { Course, Lesson, Progress, Enrollment, Category, Test, Result } = require('../models');
 
 // ─────────────────────────────────────────────────────────────
 // MARK LESSON PROGRESS
@@ -68,12 +68,51 @@ const markLessonProgress = async (userId, lessonId, completed) => {
 };
 
 // ─────────────────────────────────────────────────────────────
+// ДОПОМІЖНА ФУНКЦІЯ: статус тесту студента по курсу
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Повертає статус тесту студента по курсу.
+ * Якщо тесту немає взагалі — hasTest: false, passed: null (не блокує
+ * завершення курсу — курс без тесту завершується лише уроками).
+ *
+ * @param {string} userId
+ * @param {string} courseId
+ */
+const getTestStatus = async (userId, courseId) => {
+  const test = await Test.findOne({ where: { courseId }, attributes: ['id', 'passingScore'] });
+
+  if (!test) {
+    return { hasTest: false, passed: null, bestScore: null, attemptsCount: 0 };
+  }
+
+  const results = await Result.findAll({
+    where: { userId, testId: test.id },
+    attributes: ['score', 'passed'],
+  });
+
+  const passed = results.some((r) => r.passed);
+  const bestScore = results.length > 0 ? Math.max(...results.map((r) => r.score)) : null;
+
+  return {
+    hasTest: true,
+    passed,
+    bestScore,
+    attemptsCount: results.length,
+    passingScore: test.passingScore,
+  };
+};
+
+// ─────────────────────────────────────────────────────────────
 // GET COURSE PROGRESS
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Повертає прогрес студента по конкретному курсу:
- * скільки уроків є, скільки пройдено, відсоток завершення.
+ * Повертає прогрес студента по конкретному курсу.
+ *
+ * isCompleted = 100% уроків пройдено ТА (тесту немає АБО тест складено).
+ * Без цієї перевірки студент міг отримати "курс завершено" просто
+ * прочитавши всі уроки, навіть не здавши чи провалив тест.
  *
  * @param {string} userId
  * @param {string} courseId
@@ -119,14 +158,31 @@ const getCourseProgress = async (userId, courseId) => {
 
   const totalLessons = lessons.length;
   const completedCount = completedSet.size;
-  const percentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
+  const allLessonsDone = totalLessons > 0 && completedCount === totalLessons;
+
+  // Враховуємо тест у визначенні "завершеності" курсу
+  const testStatus = await getTestStatus(userId, courseId);
+  const isCompleted = allLessonsDone && (!testStatus.hasTest || testStatus.passed);
+
+  // ── Зважений прогрес: уроки = 70%, тест = 30% ──
+  // Якщо в курсі немає уроків — лекційна частина вважається "виконаною" (70%).
+  // Якщо тесту немає взагалі (теоретично, бо публікація без тесту заблокована) —
+  // тестова частина теж вважається "виконаною" (30%), щоб не псувати % за відсутній тест.
+  const LESSONS_WEIGHT = 70;
+  const TEST_WEIGHT = 30;
+
+  const lessonsPart = totalLessons > 0 ? (completedCount / totalLessons) * LESSONS_WEIGHT : LESSONS_WEIGHT;
+  const testPart = !testStatus.hasTest ? TEST_WEIGHT : (testStatus.passed ? TEST_WEIGHT : 0);
+  const percentage = Math.round(lessonsPart + testPart);
 
   return {
     courseId,
     totalLessons,
     completedLessons: completedCount,
     percentage,
-    isCompleted: percentage === 100,
+    allLessonsDone,
+    isCompleted,
+    test: testStatus,
     lessons: lessonsWithProgress,
   };
 };
@@ -203,12 +259,49 @@ const getAllUserProgress = async (userId) => {
     completedCountMap[cId] = (completedCountMap[cId] || 0) + 1;
   });
 
+  // ── Тести по всіх курсах студента одним запитом ──
+  const tests = await Test.findAll({
+    where: { courseId: courseIds },
+    attributes: ['id', 'courseId'],
+    raw: true,
+  });
+
+  const courseTestMap = {};
+  tests.forEach((t) => {
+    courseTestMap[t.courseId] = t.id;
+  });
+
+  const testIds = tests.map((t) => t.id);
+
+  const allResults = testIds.length
+    ? await Result.findAll({
+        where: { userId, testId: testIds },
+        attributes: ['testId', 'passed'],
+        raw: true,
+      })
+    : [];
+
+  const passedTestIds = new Set(allResults.filter((r) => r.passed).map((r) => r.testId));
+
   // Збираємо фінальну відповідь
+  const LESSONS_WEIGHT = 70;
+  const TEST_WEIGHT = 30;
+
   return enrollments.map((enrollment) => {
     const courseId = enrollment.courseId;
     const total = lessonCountMap[courseId] || 0;
     const completed = completedCountMap[courseId] || 0;
-    const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const allLessonsDone = total > 0 && completed === total;
+
+    const testId = courseTestMap[courseId];
+    const hasTest = !!testId;
+    const testPassed = hasTest ? passedTestIds.has(testId) : null;
+
+    const isCompleted = allLessonsDone && (!hasTest || testPassed);
+
+    const lessonsPart = total > 0 ? (completed / total) * LESSONS_WEIGHT : LESSONS_WEIGHT;
+    const testPart = !hasTest ? TEST_WEIGHT : (testPassed ? TEST_WEIGHT : 0);
+    const percentage = Math.round(lessonsPart + testPart);
 
     return {
       course: enrollment.course,
@@ -216,9 +309,11 @@ const getAllUserProgress = async (userId) => {
       totalLessons: total,
       completedLessons: completed,
       percentage,
-      isCompleted: total > 0 && percentage === 100,
+      allLessonsDone,
+      isCompleted,
+      test: { hasTest, passed: testPassed },
     };
   });
 };
 
-module.exports = { markLessonProgress, getCourseProgress, getAllUserProgress };
+module.exports = { markLessonProgress, getCourseProgress, getAllUserProgress, getTestStatus };

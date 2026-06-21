@@ -16,6 +16,7 @@ const UserProfile = require('./UserProfile');
 const Lesson      = require('./Lesson');
 const Progress    = require('./Progress');
 const Test        = require('./Test');
+const Result      = require('./Result');
 
 // --- User ↔ Course (викладач є автором багатьох курсів) ---
 User.hasMany(Course, {
@@ -78,4 +79,11 @@ Progress.belongsTo(Lesson, { foreignKey: 'lessonId', as: 'lesson' });
 Course.hasOne(Test, { foreignKey: 'courseId', as: 'test', onDelete: 'CASCADE' });
 Test.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
 
-module.exports = { User, Category, Course, Enrollment, UserProfile, Lesson, Progress, Test };
+// Result: кожна спроба здачі тесту студентом (для лічильника maxAttempts)
+User.hasMany(Result, { foreignKey: 'userId', as: 'testResults' });
+Result.belongsTo(User, { foreignKey: 'userId', as: 'student' });
+
+Test.hasMany(Result, { foreignKey: 'testId', as: 'results', onDelete: 'CASCADE' });
+Result.belongsTo(Test, { foreignKey: 'testId', as: 'test' });
+
+module.exports = { User, Category, Course, Enrollment, UserProfile, Lesson, Progress, Test, Result };

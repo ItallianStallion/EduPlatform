@@ -57,6 +57,17 @@ const Test = sequelize.define(
         max: { args: [100], msg: 'Прохідний бал не може перевищувати 100' },
       },
     },
+    // Максимальна кількість дозволених спроб. null = необмежено.
+    // Викладач задає це число при створенні тесту.
+    maxAttempts: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+      validate: {
+        min: { args: [1], msg: 'Кількість спроб повинна бути мінімум 1' },
+      },
+      comment: 'null = необмежена кількість спроб',
+    },
   },
   {
     tableName: 'tests',

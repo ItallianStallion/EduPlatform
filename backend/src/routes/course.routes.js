@@ -64,6 +64,7 @@ router.post(
     body('categoryId').optional().isUUID(4).withMessage('Невірний формат categoryId'),
     body('price').optional().isFloat({ min: 0 }).withMessage('Ціна не може бути від\'ємною'),
     body('coverImage').optional().isString(),
+    body('accessMode').optional().isIn(['open', 'sequential']).withMessage("accessMode: 'open' або 'sequential'"),
   ],
   courseController.createCourse,
 );
@@ -93,6 +94,7 @@ router.patch(
     body('categoryId').optional().isUUID(4),
     body('price').optional().isFloat({ min: 0 }),
     body('coverImage').optional().isString(),
+    body('accessMode').optional().isIn(['open', 'sequential']),
   ],
   courseController.updateCourse,
 );

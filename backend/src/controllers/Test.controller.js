@@ -84,4 +84,21 @@ const getUserTestResults = async (req, res, next) => {
   }
 };
 
-module.exports = { getTestByCourse, createTest, submitTest, getUserTestResults };
+/**
+ * PATCH /api/v1/tests/:id
+ * Редагування тесту (наприклад, maxAttempts, passingScore). Тільки власник.
+ */
+const updateTest = async (req, res, next) => {
+  try {
+    const test = await testService.updateTest(req.params.id, req.user.id, req.body);
+    return res.status(200).json({
+      success: true,
+      message: 'Тест оновлено.',
+      data: { test },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+module.exports = { getTestByCourse, createTest, updateTest, submitTest, getUserTestResults };
