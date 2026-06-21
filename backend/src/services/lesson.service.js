@@ -1,14 +1,18 @@
 // src/services/lesson.service.js
 // Бізнес-логіка уроків: CRUD з перевіркою доступу.
 //
-// Курс може бути в одному з двох режимів (Course.accessMode):
+// Курс будується БЛОКАМИ: кожен урок утворює один блок, опціонально
+// доповнений тестом цього блоку (Test.lessonId). Курс може бути в
+// одному з двох режимів (Course.accessMode):
 //  - 'open'       — студент бачить і відкриває будь-який урок одразу.
-//  - 'sequential' — урок N доступний студенту лише після того, як він
-//                   позначив пройденим урок N-1 (за полем order).
+//  - 'sequential' — блок N доступний студенту лише після того, як
+//                   ПОВНІСТЮ завершено блок N-1 (за полем order) —
+//                   тобто пройдено урок N-1 І, якщо в ньому є тест,
+//                   цей тест складено.
 
 'use strict';
 
-const { Course, Lesson, Enrollment, Progress } = require('../models');
+const { Course, Lesson, Enrollment, Progress, Test, Result } = require('../models');
 
 // ─────────────────────────────────────────────────────────────
 // ДОПОМІЖНІ ФУНКЦІЇ
@@ -25,7 +29,10 @@ const assertCourseAccess = async (courseId, requester) => {
   const course = await Course.findByPk(courseId);
 
   if (!course || course.status !== 'published') {
-    if (!(requester.role === 'teacher' && course?.teacherId === requester.id) && requester.role !== 'admin') {
+    if (
+      !(requester.role === 'teacher' && course?.teacherId === requester.id) &&
+      requester.role !== 'admin'
+    ) {
       const err = new Error('Курс не знайдено або ще не опубліковано.');
       err.statusCode = 404;
       err.isOperational = true;
@@ -80,16 +87,54 @@ const assertCourseOwner = async (courseId, teacherId) => {
 const getCompletedLessonIdsSet = async (userId, courseId) => {
   const completed = await Progress.findAll({
     where: { userId, completed: true },
-    include: [{ model: Lesson, as: 'lesson', attributes: ['id'], where: { courseId }, required: true }],
+    include: [
+      { model: Lesson, as: 'lesson', attributes: ['id'], where: { courseId }, required: true },
+    ],
     attributes: ['lessonId'],
   });
   return new Set(completed.map((p) => p.lessonId));
 };
 
 /**
+ * Повертає Set з id уроків курсу, чий тест блоку студент вже склав
+ * (passed: true хоча б одна спроба). Уроки без тесту блоку сюди не
+ * потрапляють — це навмисно, перевіряється окремо через blockTestByLessonId.
+ *
+ * @param {string} userId
+ * @param {string} courseId
+ */
+const getPassedBlockTestLessonIdsSet = async (userId, courseId) => {
+  const lessons = await Lesson.findAll({ where: { courseId }, attributes: ['id'] });
+  const lessonIds = lessons.map((l) => l.id);
+  if (lessonIds.length === 0) return { passedSet: new Set(), blockTestLessonIds: new Set() };
+
+  const blockTests = await Test.findAll({
+    where: { lessonId: lessonIds },
+    attributes: ['id', 'lessonId'],
+  });
+  if (blockTests.length === 0) return { passedSet: new Set(), blockTestLessonIds: new Set() };
+
+  const testIdToLessonId = {};
+  blockTests.forEach((t) => {
+    testIdToLessonId[t.id] = t.lessonId;
+  });
+
+  const passedResults = await Result.findAll({
+    where: { userId, testId: Object.keys(testIdToLessonId), passed: true },
+    attributes: ['testId'],
+  });
+
+  const passedSet = new Set(passedResults.map((r) => testIdToLessonId[r.testId]));
+  const blockTestLessonIds = new Set(blockTests.map((t) => t.lessonId));
+
+  return { passedSet, blockTestLessonIds };
+};
+
+/**
  * Додає прапорець `locked` до кожного уроку (для студента в sequential-режимі).
- * Урок з найменшим order завжди відкритий. Кожен наступний — лише якщо
- * попередній (за order) вже пройдений.
+ * Блок з найменшим order завжди відкритий. Кожен наступний блок —
+ * лише якщо ПОПЕРЕДНІЙ блок повністю завершений: урок пройдено І,
+ * якщо в ньому є тест блоку, цей тест складено.
  *
  * Для викладача/адміна та для режиму 'open' — locked завжди false.
  *
@@ -105,12 +150,21 @@ const annotateLockStatus = async (lessons, course, requester) => {
   }
 
   const completedSet = await getCompletedLessonIdsSet(requester.id, course.id);
+  const { passedSet, blockTestLessonIds } = await getPassedBlockTestLessonIdsSet(
+    requester.id,
+    course.id,
+  );
 
-  let previousCompleted = true; // перший урок завжди відкритий
+  const isBlockDone = (lessonId) => {
+    const lessonDone = completedSet.has(lessonId);
+    const hasBlockTest = blockTestLessonIds.has(lessonId);
+    return lessonDone && (!hasBlockTest || passedSet.has(lessonId));
+  };
+
+  let previousBlockDone = true; // перший блок завжди відкритий
   return lessons.map((lesson) => {
-    const locked = !previousCompleted;
-    // Якщо поточний урок НЕ пройдений — усі наступні будуть заблоковані
-    previousCompleted = completedSet.has(lesson.id);
+    const locked = !previousBlockDone;
+    previousBlockDone = isBlockDone(lesson.id);
     return { ...lesson.get({ plain: true }), locked };
   });
 };
@@ -131,9 +185,10 @@ const getLessonsByCourse = async (courseId, requester) => {
 
   const lessons = await Lesson.findAll({
     where: { courseId },
-    attributes: requester.role === 'student'
-      ? ['id', 'title', 'type', 'order', 'createdAt']
-      : ['id', 'title', 'type', 'order', 'content', 'videoUrl', 'pdfUrl', 'createdAt'],
+    attributes:
+      requester.role === 'student'
+        ? ['id', 'title', 'type', 'order', 'createdAt']
+        : ['id', 'title', 'type', 'order', 'content', 'videoUrl', 'pdfUrl', 'createdAt'],
     order: [['order', 'ASC']],
   });
 
@@ -141,9 +196,76 @@ const getLessonsByCourse = async (courseId, requester) => {
 };
 
 /**
+ * Повертає курс як список БЛОКІВ: кожен блок = урок + метадані тесту
+ * цього блоку (якщо є), у тому ж порядку, що й уроки. Зручно для
+ * фронтенду, щоб не робити окремий запит за тестом на кожен урок.
+ *
+ * Метадані тесту НЕ містять питань/відповідей — лише існування,
+ * id, назву та (для студента) короткий статус проходження.
+ *
+ * @param {string} courseId
+ * @param {{ id: string, role: string }} requester
+ */
+const getCourseBlocks = async (courseId, requester) => {
+  const course = await assertCourseAccess(courseId, requester);
+
+  const lessons = await Lesson.findAll({
+    where: { courseId },
+    attributes:
+      requester.role === 'student'
+        ? ['id', 'title', 'type', 'order', 'createdAt']
+        : ['id', 'title', 'type', 'order', 'content', 'videoUrl', 'pdfUrl', 'createdAt'],
+    order: [['order', 'ASC']],
+  });
+
+  const lessonsWithLock = await annotateLockStatus(lessons, course, requester);
+  const lessonIds = lessons.map((l) => l.id);
+
+  const blockTests = lessonIds.length
+    ? await Test.findAll({
+        where: { lessonId: lessonIds },
+        attributes: ['id', 'lessonId', 'title', 'passingScore', 'maxAttempts'],
+      })
+    : [];
+  const testByLessonId = {};
+  blockTests.forEach((t) => {
+    testByLessonId[t.lessonId] = t;
+  });
+
+  // Для студента — короткий статус "складено/не складено" по кожному
+  // тесту блоку, без розкриття питань.
+  let passedSet = new Set();
+  if (requester.role === 'student' && blockTests.length > 0) {
+    const blockTestIds = blockTests.map((t) => t.id);
+    const passedResults = await Result.findAll({
+      where: { userId: requester.id, testId: blockTestIds, passed: true },
+      attributes: ['testId'],
+    });
+    passedSet = new Set(passedResults.map((r) => r.testId));
+  }
+
+  return lessonsWithLock.map((lesson) => {
+    const blockTest = testByLessonId[lesson.id] || null;
+    return {
+      lesson,
+      test: blockTest
+        ? {
+            id: blockTest.id,
+            title: blockTest.title,
+            passingScore: blockTest.passingScore,
+            maxAttempts: blockTest.maxAttempts,
+            passed: requester.role === 'student' ? passedSet.has(blockTest.id) : null,
+          }
+        : null,
+    };
+  });
+};
+
+/**
  * Повертає деталі одного уроку.
- * У sequential-режимі студент не може відкрити заблокований урок —
- * повертається 403 з поясненням.
+ * У sequential-режимі студент не може відкрити заблокований урок
+ * (тобто урок наступного блоку, поки попередній блок не завершено
+ * повністю — урок + тест блоку) — повертається 403 з поясненням.
  *
  * @param {string} lessonId
  * @param {{ id: string, role: string }} requester
@@ -169,14 +291,24 @@ const getLessonById = async (lessonId, requester) => {
     });
 
     const completedSet = await getCompletedLessonIdsSet(requester.id, lesson.courseId);
+    const { passedSet, blockTestLessonIds } = await getPassedBlockTestLessonIdsSet(
+      requester.id,
+      lesson.courseId,
+    );
 
-    let previousCompleted = true;
+    const isBlockDone = (lessonId2) => {
+      const lessonDone = completedSet.has(lessonId2);
+      const hasBlockTest = blockTestLessonIds.has(lessonId2);
+      return lessonDone && (!hasBlockTest || passedSet.has(lessonId2));
+    };
+
+    let previousBlockDone = true;
     for (const l of allLessons) {
-      const locked = !previousCompleted;
+      const locked = !previousBlockDone;
       if (l.id === lesson.id) {
         if (locked) {
           const err = new Error(
-            'Цей урок ще заблокований. Спочатку завершіть попередній урок курсу.',
+            'Цей урок ще заблокований. Спочатку завершіть попередній блок курсу (урок і його тест).',
           );
           err.statusCode = 403;
           err.isOperational = true;
@@ -185,7 +317,7 @@ const getLessonById = async (lessonId, requester) => {
         }
         break;
       }
-      previousCompleted = completedSet.has(l.id);
+      previousBlockDone = isBlockDone(l.id);
     }
   }
 
@@ -265,6 +397,8 @@ const updateLesson = async (lessonId, teacherId, updates) => {
 
 /**
  * Видаляє урок. Тільки власник курсу.
+ * Видалення уроку каскадно видаляє і тест його блоку (onDelete: CASCADE
+ * на Test.lessonId), якщо такий є.
  *
  * @param {string} lessonId
  * @param {string} teacherId
@@ -283,4 +417,11 @@ const deleteLesson = async (lessonId, teacherId) => {
   await lesson.destroy();
 };
 
-module.exports = { getLessonsByCourse, getLessonById, createLesson, updateLesson, deleteLesson };
+module.exports = {
+  getLessonsByCourse,
+  getCourseBlocks,
+  getLessonById,
+  createLesson,
+  updateLesson,
+  deleteLesson,
+};

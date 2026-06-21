@@ -1,16 +1,16 @@
 // src/services/analytics.service.js
 // Бізнес-логіка аналітики для викладача.
+//
+// Прогрес студентів рахується по блоках "урок-тест" — через
+// buildCourseBlocksProgress з progress.service.js. Це та сама функція,
+// яку використовує студентський дашборд, тому цифри викладача і
+// студента ніколи не розходяться.
 
 'use strict';
 
-const { fn, col, Op } = require('sequelize');
-const { Course, User, Lesson, Enrollment, Progress, Category, Test, Result } = require('../models');
-
-// Вага уроків і тесту у зваженому % завершення курсу.
-// Узгоджено з src/services/progress.service.js — щоб викладач і студент
-// бачили однакові цифри прогресу.
-const LESSONS_WEIGHT = 70;
-const TEST_WEIGHT = 30;
+const { fn, col } = require('sequelize');
+const { Course, User, Lesson, Enrollment, Category, Test } = require('../models');
+const { buildCourseBlocksProgress } = require('./progress.service');
 
 // ─────────────────────────────────────────────────────────────
 // ДОПОМІЖНА ФУНКЦІЯ
@@ -45,7 +45,7 @@ const assertCourseOwner = async (courseId, teacherId) => {
 
 /**
  * Повертає детальну аналітику по одному курсу:
- * кількість студентів, дохід, середній прогрес.
+ * кількість студентів, дохід, середній прогрес по блоках.
  *
  * @param {string} courseId
  * @param {string} teacherId
@@ -66,77 +66,39 @@ const getCourseAnalytics = async (courseId, teacherId) => {
   const totalStudents = parseInt(enrollmentStats[0]?.totalStudents, 10) || 0;
   const lastEnrollmentAt = enrollmentStats[0]?.lastEnrollmentAt || null;
 
-  // Загальна кількість уроків
+  // Загальна кількість уроків (блоків)
   const totalLessons = await Lesson.count({ where: { courseId } });
 
-  // Чи має курс тест взагалі
-  const test = await Test.findOne({ where: { courseId }, attributes: ['id'] });
+  // Чи має курс підсумковий (legacy) тест на рівні курсу
+  const legacyTest = await Test.findOne({ where: { courseId }, attributes: ['id'] });
 
-  // Середній прогрес студентів (зважено: 70% уроки + 30% тест, як і у
-  // студентському progress.service.js, щоб цифри не розходилися)
+  // Скільки блоків курсу взагалі мають тест
+  const blocksWithTest = await Test.count({
+    include: [{ model: Lesson, as: 'lesson', attributes: [], where: { courseId }, required: true }],
+  });
+
   let averageProgress = 0;
   let studentsPassedTest = 0;
   let studentsCompletedCourse = 0;
 
   if (totalStudents > 0) {
-    // Кількість пройдених уроків по кожному студенту
-    const courseLessonIds = await Lesson.findAll({
-      where: { courseId },
-      attributes: ['id'],
-      raw: true,
-    }).then((rows) => rows.map((r) => r.id));
-
-    const completedRows =
-      totalLessons > 0
-        ? await Progress.findAll({
-            where: {
-              completed: true,
-              lessonId: { [Op.in]: courseLessonIds },
-            },
-            attributes: [
-              [col('Progress.user_id'), 'userId'],
-              [fn('COUNT', col('Progress.id')), 'completedCount'],
-            ],
-            group: [col('Progress.user_id')],
-            raw: true,
-          })
-        : [];
-
-    const completedLessonsMap = {};
-    completedRows.forEach((row) => {
-      completedLessonsMap[row.userId] = parseInt(row.completedCount, 10);
-    });
-
-    // Хто з зарахованих студентів вже склав тест (якщо тест є)
-    let passedUserIds = new Set();
-    if (test) {
-      const passedResults = await Result.findAll({
-        where: { testId: test.id, passed: true },
-        attributes: ['userId'],
-        group: ['userId'],
-        raw: true,
-      });
-      passedUserIds = new Set(passedResults.map((r) => r.userId));
-    }
-
     const enrolledUserIds = await Enrollment.findAll({
       where: { courseId },
       attributes: ['userId'],
       raw: true,
     }).then((rows) => rows.map((r) => r.userId));
 
-    let percentageSum = 0;
-    enrolledUserIds.forEach((userId) => {
-      const completed = completedLessonsMap[userId] || 0;
-      const allLessonsDone = totalLessons > 0 && completed === totalLessons;
-      const lessonsPart =
-        totalLessons > 0 ? (completed / totalLessons) * LESSONS_WEIGHT : LESSONS_WEIGHT;
-      const testPassed = test ? passedUserIds.has(userId) : false;
-      const testPart = !test ? TEST_WEIGHT : testPassed ? TEST_WEIGHT : 0;
+    // Прогрес кожного студента по блоках — та сама функція, що й у
+    // студентському дашборді (progress.service.js), тому цифри співпадають.
+    const progressList = await Promise.all(
+      enrolledUserIds.map((userId) => buildCourseBlocksProgress(userId, courseId)),
+    );
 
-      percentageSum += lessonsPart + testPart;
-      if (testPassed) studentsPassedTest += 1;
-      if (allLessonsDone && (!test || testPassed)) studentsCompletedCourse += 1;
+    let percentageSum = 0;
+    progressList.forEach((p) => {
+      percentageSum += p.percentage;
+      if (p.legacyTest.hasTest && p.legacyTest.passed) studentsPassedTest += 1;
+      if (p.isCompleted) studentsCompletedCourse += 1;
     });
 
     averageProgress = Math.round(percentageSum / totalStudents);
@@ -164,8 +126,12 @@ const getCourseAnalytics = async (courseId, teacherId) => {
     lessons: {
       total: totalLessons,
     },
+    blocks: {
+      total: totalLessons,
+      withTest: blocksWithTest,
+    },
     test: {
-      hasTest: !!test,
+      hasLegacyCourseTest: !!legacyTest,
     },
     progress: {
       averagePercentage: averageProgress,
@@ -183,16 +149,13 @@ const getCourseAnalytics = async (courseId, teacherId) => {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Повертає список студентів курсу з їх індивідуальним прогресом.
+ * Повертає список студентів курсу з їх індивідуальним прогресом по блоках.
  *
  * @param {string} courseId
  * @param {string} teacherId
  */
 const getCourseStudentsProgress = async (courseId, teacherId) => {
   await assertCourseOwner(courseId, teacherId);
-
-  const totalLessons = await Lesson.count({ where: { courseId } });
-  const test = await Test.findOne({ where: { courseId }, attributes: ['id', 'passingScore'] });
 
   // Всі студенти курсу
   const enrollments = await Enrollment.findAll({
@@ -210,82 +173,26 @@ const getCourseStudentsProgress = async (courseId, teacherId) => {
 
   if (enrollments.length === 0) return [];
 
-  const userIds = enrollments.map((e) => e.userId);
+  // Прогрес по блоках для кожного студента — перевикористовуємо ту саму
+  // функцію, що й студентський дашборд.
+  const progressList = await Promise.all(
+    enrollments.map((e) => buildCourseBlocksProgress(e.userId, courseId)),
+  );
 
-  // Отримуємо id уроків курсу, щоб уникнути проблемного JOIN з GROUP BY у PostgreSQL
-  const courseLessonIds = await Lesson.findAll({
-    where: { courseId },
-    attributes: ['id'],
-    raw: true,
-  }).then((rows) => rows.map((r) => r.id));
-
-  // Прогрес по всіх студентах одним запитом
-  const progressRows = await Progress.findAll({
-    where: {
-      userId: { [Op.in]: userIds },
-      completed: true,
-      lessonId: { [Op.in]: courseLessonIds },
-    },
-    attributes: [
-      [col('Progress.user_id'), 'userId'],
-      [fn('COUNT', col('Progress.id')), 'completedCount'],
-    ],
-    group: [col('Progress.user_id')],
-    raw: true,
-  });
-
-  const progressMap = {};
-  progressRows.forEach((row) => {
-    progressMap[row.userId] = parseInt(row.completedCount, 10);
-  });
-
-  // Результати тесту по всіх студентах курсу одним запитом
-  const bestScoreMap = {};
-  const passedMap = {};
-  const attemptsMap = {};
-  if (test) {
-    const results = await Result.findAll({
-      where: { userId: { [Op.in]: userIds }, testId: test.id },
-      attributes: ['userId', 'score', 'passed'],
-      raw: true,
-    });
-
-    results.forEach((r) => {
-      attemptsMap[r.userId] = (attemptsMap[r.userId] || 0) + 1;
-      if (r.passed) passedMap[r.userId] = true;
-      if (bestScoreMap[r.userId] === undefined || r.score > bestScoreMap[r.userId]) {
-        bestScoreMap[r.userId] = r.score;
-      }
-    });
-  }
-
-  return enrollments.map((enrollment) => {
-    const completed = progressMap[enrollment.userId] || 0;
-    const allLessonsDone = totalLessons > 0 && completed === totalLessons;
-
-    const testPassed = test ? !!passedMap[enrollment.userId] : false;
-    const lessonsPart =
-      totalLessons > 0 ? (completed / totalLessons) * LESSONS_WEIGHT : LESSONS_WEIGHT;
-    const testPart = !test ? TEST_WEIGHT : testPassed ? TEST_WEIGHT : 0;
-    const percentage = Math.round(lessonsPart + testPart);
+  return enrollments.map((enrollment, i) => {
+    const p = progressList[i];
 
     return {
       student: enrollment.student,
       enrolledAt: enrollment.enrolledAt,
-      completedLessons: completed,
-      totalLessons,
-      percentage,
-      allLessonsDone,
-      isCompleted: allLessonsDone && (!test || testPassed),
-      test: test
-        ? {
-            hasTest: true,
-            passed: testPassed,
-            bestScore: bestScoreMap[enrollment.userId] ?? null,
-            attemptsCount: attemptsMap[enrollment.userId] || 0,
-            passingScore: test.passingScore,
-          }
-        : { hasTest: false, passed: null, bestScore: null, attemptsCount: 0 },
+      completedLessons: p.completedLessons,
+      totalLessons: p.totalLessons,
+      percentage: p.percentage,
+      allLessonsDone: p.allLessonsDone,
+      allBlocksDone: p.allBlocksDone,
+      isCompleted: p.isCompleted,
+      blocks: p.blocks,
+      legacyTest: p.legacyTest,
     };
   });
 };
