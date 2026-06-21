@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* --- Color tokens: "ledger" palette --- */
+  --color-ink: #14213d;
+  --color-ink-light: #2a3a63;
+  --color-paper: #fbf8f2;
+  --color-paper-raised: #ffffff;
+  --color-gold: #e3a33e;
+  --color-gold-dark: #c4842a;
+  --color-teal: #2f7b6e;
+  --color-teal-dark: #225a51;
+  --color-coral: #d9624b;
+  --color-coral-dark: #b94c38;
+  --color-slate: #6b7280;
+  --color-line: #e5e0d5;
+
+  --font-display: "Fraunces", serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-body);
+  }
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+  }
+  ::selection {
+    background-color: var(--color-gold);
+    color: var(--color-ink);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-gold-dark);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  /* Stitched thread divider — the signature motif: a dashed binding
+     thread connecting lesson "beads" in the course/lesson viewer. */
+  .thread-line {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      var(--color-line) 0,
+      var(--color-line) 6px,
+      transparent 6px,
+      transparent 12px
+    );
+    width: 2px;
+  }
+}
