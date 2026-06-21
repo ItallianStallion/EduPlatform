@@ -19,8 +19,22 @@ const { Course, Lesson, Enrollment, Progress, Test, Result } = require('../model
 // ─────────────────────────────────────────────────────────────
 
 /**
+ * Чи є запитувач власником курсу або admin'ом (тобто НЕ "учнем" цього курсу).
+ * Використовується замість прямої перевірки `role === 'student'`, щоб
+ * викладач, який навчається на чужому курсі, отримував той самий досвід
+ * (блокування уроків, статус тестів), що і студент.
+ */
+const isOwnerOrAdmin = (course, requester) =>
+  requester.role === 'admin' || (requester.role === 'teacher' && course.teacherId === requester.id);
+
+/**
  * Перевіряє чи має користувач доступ до уроків курсу.
- * Доступ мають: власник-викладач, записані студенти, адміни.
+ *
+ * Доступ без формального запису мають: власник-викладач курсу, admin.
+ * Усі інші — студенти, а також ВИКЛАДАЧІ, які не є власником цього курсу —
+ * повинні бути записані (Enrollment), щоб бачити контент уроків. Це навмисно
+ * уніфіковано: викладач, що хоче навчатись на чужому курсі, проходить той
+ * самий шлях запису, що і студент (включно з оплатою для платних курсів).
  *
  * @param {string} courseId
  * @param {{ id: string, role: string }} requester
@@ -28,19 +42,23 @@ const { Course, Lesson, Enrollment, Progress, Test, Result } = require('../model
 const assertCourseAccess = async (courseId, requester) => {
   const course = await Course.findByPk(courseId);
 
-  if (!course || course.status !== 'published') {
-    if (
-      !(requester.role === 'teacher' && course?.teacherId === requester.id) &&
-      requester.role !== 'admin'
-    ) {
-      const err = new Error('Курс не знайдено або ще не опубліковано.');
-      err.statusCode = 404;
-      err.isOperational = true;
-      throw err;
-    }
+  if (!course) {
+    const err = new Error('Курс не знайдено або ще не опубліковано.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
   }
 
-  if (requester.role === 'student') {
+  const ownerOrAdmin = isOwnerOrAdmin(course, requester);
+
+  if (course.status !== 'published' && !ownerOrAdmin) {
+    const err = new Error('Курс не знайдено або ще не опубліковано.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  if (!ownerOrAdmin) {
     const enrollment = await Enrollment.findOne({
       where: { userId: requester.id, courseId },
     });
@@ -143,9 +161,9 @@ const getPassedBlockTestLessonIdsSet = async (userId, courseId) => {
  * @param {{ id: string, role: string }} requester
  */
 const annotateLockStatus = async (lessons, course, requester) => {
-  const isSequentialForStudent = course.accessMode === 'sequential' && requester.role === 'student';
+  const isSequentialForLearner = course.accessMode === 'sequential' && !isOwnerOrAdmin(course, requester);
 
-  if (!isSequentialForStudent) {
+  if (!isSequentialForLearner) {
     return lessons.map((lesson) => ({ ...lesson.get({ plain: true }), locked: false }));
   }
 
@@ -182,13 +200,13 @@ const annotateLockStatus = async (lessons, course, requester) => {
  */
 const getLessonsByCourse = async (courseId, requester) => {
   const course = await assertCourseAccess(courseId, requester);
+  const isLearner = !isOwnerOrAdmin(course, requester);
 
   const lessons = await Lesson.findAll({
     where: { courseId },
-    attributes:
-      requester.role === 'student'
-        ? ['id', 'title', 'type', 'order', 'createdAt']
-        : ['id', 'title', 'type', 'order', 'content', 'videoUrl', 'pdfUrl', 'createdAt'],
+    attributes: isLearner
+      ? ['id', 'title', 'type', 'order', 'createdAt']
+      : ['id', 'title', 'type', 'order', 'content', 'videoUrl', 'pdfUrl', 'createdAt'],
     order: [['order', 'ASC']],
   });
 
@@ -208,13 +226,13 @@ const getLessonsByCourse = async (courseId, requester) => {
  */
 const getCourseBlocks = async (courseId, requester) => {
   const course = await assertCourseAccess(courseId, requester);
+  const isLearner = !isOwnerOrAdmin(course, requester);
 
   const lessons = await Lesson.findAll({
     where: { courseId },
-    attributes:
-      requester.role === 'student'
-        ? ['id', 'title', 'type', 'order', 'createdAt']
-        : ['id', 'title', 'type', 'order', 'content', 'videoUrl', 'pdfUrl', 'createdAt'],
+    attributes: isLearner
+      ? ['id', 'title', 'type', 'order', 'createdAt']
+      : ['id', 'title', 'type', 'order', 'content', 'videoUrl', 'pdfUrl', 'createdAt'],
     order: [['order', 'ASC']],
   });
 
@@ -232,10 +250,10 @@ const getCourseBlocks = async (courseId, requester) => {
     testByLessonId[t.lessonId] = t;
   });
 
-  // Для студента — короткий статус "складено/не складено" по кожному
-  // тесту блоку, без розкриття питань.
+  // Для учня (студента або викладача-не-власника) — короткий статус
+  // "складено/не складено" по кожному тесту блоку, без розкриття питань.
   let passedSet = new Set();
-  if (requester.role === 'student' && blockTests.length > 0) {
+  if (isLearner && blockTests.length > 0) {
     const blockTestIds = blockTests.map((t) => t.id);
     const passedResults = await Result.findAll({
       where: { userId: requester.id, testId: blockTestIds, passed: true },
@@ -254,7 +272,7 @@ const getCourseBlocks = async (courseId, requester) => {
             title: blockTest.title,
             passingScore: blockTest.passingScore,
             maxAttempts: blockTest.maxAttempts,
-            passed: requester.role === 'student' ? passedSet.has(blockTest.id) : null,
+            passed: isLearner ? passedSet.has(blockTest.id) : null,
           }
         : null,
     };
@@ -282,8 +300,8 @@ const getLessonById = async (lessonId, requester) => {
 
   const course = await assertCourseAccess(lesson.courseId, requester);
 
-  // Перевірка блокування для студента в sequential-режимі
-  if (course.accessMode === 'sequential' && requester.role === 'student') {
+  // Перевірка блокування для учня (студента або чужого викладача) в sequential-режимі
+  if (course.accessMode === 'sequential' && !isOwnerOrAdmin(course, requester)) {
     const allLessons = await Lesson.findAll({
       where: { courseId: lesson.courseId },
       attributes: ['id', 'order'],

@@ -106,13 +106,14 @@ router.get(
 
 /**
  * POST /api/v1/tests/:id/submit
- * Студент здає тест.
+ * Здача тесту. Студенти — завжди; викладачі — якщо записані на чужий курс
+ * (перевірка Enrollment відбувається у test.service.js).
  * Body: { answers: number[] }
  */
 router.post(
   '/:id/submit',
   authenticate,
-  checkRole('student'),
+  checkRole('student', 'teacher'),
   [
     param('id').isUUID(4).withMessage('Невірний формат ID тесту'),
     body('answers').isArray({ min: 1 }).withMessage('Потрібен масив відповідей'),

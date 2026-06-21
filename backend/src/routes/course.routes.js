@@ -125,12 +125,14 @@ router.patch(
 
 /**
  * POST /api/v1/courses/:id/enroll
- * Запис на курс. Тільки для авторизованих студентів.
+ * Запис на курс. Студенти — на будь-який курс.
+ * Викладачі — на чужий курс (хочуть навчатись самі); на власний курс
+ * запис заблокований окремою перевіркою у course.service.js.
  */
 router.post(
   '/:id/enroll',
   authenticate,
-  checkRole('student'),
+  checkRole('student', 'teacher'),
   [param('id').isUUID(4).withMessage('Невірний формат ID курсу')],
   courseController.enrollInCourse,
 );

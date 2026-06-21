@@ -145,19 +145,22 @@ const getCourses = async ({
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Записує студента на курс. Обробляє безкоштовні та платні курси.
+ * Записує користувача на курс. Обробляє безкоштовні та платні курси.
+ * Дозволено студентам (на будь-який курс) і викладачам (на чужий курс —
+ * викладач теж може навчатись, але не на власному курсі).
  *
  * Бізнес-правила:
- * 1. Студент не може записатись двічі на один курс.
- * 2. Безкоштовний курс → одразу створюємо Enrollment.
- * 3. Платний курс → симуляція оплати → 10% платформі, 90% на баланс викладача.
- * 4. Після успішного запису — емітуємо подію для email-сповіщення.
+ * 1. Власник курсу не може записатись на власний курс.
+ * 2. Користувач не може записатись двічі на один курс.
+ * 3. Безкоштовний курс → одразу створюємо Enrollment.
+ * 4. Платний курс → симуляція оплати → 10% платформі, 90% на баланс викладача.
+ * 5. Після успішного запису — емітуємо подію для email-сповіщення.
  *
- * @param {string} courseId  - ID курсу
- * @param {string} studentId - ID студента (з req.user)
+ * @param {string} courseId - ID курсу
+ * @param {string} userId   - ID користувача, що записується (з req.user)
  * @returns {{ enrollment: Enrollment, paymentResult?: object }}
  */
-const enrollInCourse = async (courseId, studentId) => {
+const enrollInCourse = async (courseId, userId) => {
   // 1. Знаходимо курс із даними викладача
   const course = await Course.findOne({
     where: { id: courseId, status: 'published' },
@@ -171,9 +174,18 @@ const enrollInCourse = async (courseId, studentId) => {
     throw err;
   }
 
-  // 2. Перевіряємо чи студент вже записаний
+  // 2. Власник курсу не може записатись на власний курс
+  if (course.teacherId === userId) {
+    const err = new Error('Ви є автором цього курсу. Запис на власний курс неможливий.');
+    err.statusCode = 400;
+    err.isOperational = true;
+    err.code = 'OWN_COURSE';
+    throw err;
+  }
+
+  // 3. Перевіряємо чи користувач вже записаний
   const existingEnrollment = await Enrollment.findOne({
-    where: { userId: studentId, courseId },
+    where: { userId, courseId },
   });
 
   if (existingEnrollment) {
@@ -184,27 +196,27 @@ const enrollInCourse = async (courseId, studentId) => {
     throw err;
   }
 
-  // 3. Безкоштовний курс — одразу записуємо
+  // 4. Безкоштовний курс — одразу записуємо
   if (parseFloat(course.price) === 0) {
-    const enrollment = await Enrollment.create({ userId: studentId, courseId });
+    const enrollment = await Enrollment.create({ userId, courseId });
 
     // Інвалідуємо кеш каталогу (кількість студентів змінилась)
     await invalidateCoursesCache();
 
     // Емітуємо подію для майбутнього email-підтвердження (заглушка)
-    emitEnrollmentEvent({ type: 'FREE_ENROLLMENT', studentId, courseId, course });
+    emitEnrollmentEvent({ type: 'FREE_ENROLLMENT', studentId: userId, courseId, course });
 
     return { enrollment, isFree: true };
   }
 
-  // 4. Платний курс — транзакція з симуляцією платежу
+  // 5. Платний курс — транзакція з симуляцією платежу
   const transaction = await sequelize.transaction();
 
   try {
     // Симуляція платіжного процесингу (Stripe/LiqPay заглушка)
     const paymentResult = await simulatePayment({
       amount: parseFloat(course.price),
-      studentId,
+      studentId: userId,
       courseId,
     });
 
@@ -217,7 +229,7 @@ const enrollInCourse = async (courseId, studentId) => {
     });
 
     // Створюємо запис про зарахування
-    const enrollment = await Enrollment.create({ userId: studentId, courseId }, { transaction });
+    const enrollment = await Enrollment.create({ userId, courseId }, { transaction });
 
     await transaction.commit();
 
@@ -227,7 +239,7 @@ const enrollInCourse = async (courseId, studentId) => {
     // Емітуємо події для email-сповіщень
     emitEnrollmentEvent({
       type: 'PAID_ENROLLMENT',
-      studentId,
+      studentId: userId,
       courseId,
       course,
       teacherId: course.teacherId,
