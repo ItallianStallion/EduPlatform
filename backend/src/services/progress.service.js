@@ -1,10 +1,22 @@
 // src/services/progress.service.js
-// Бізнес-логіка прогресу студента по урокам і курсам.
+// Бізнес-логіка прогресу студента по урокам, блокам і курсам.
+//
+// Курс складається з послідовності БЛОКІВ: кожен урок утворює один блок,
+// опціонально доповнений тестом цього блоку (Test.lessonId). Блок
+// вважається завершеним, коли урок прочитано І (якщо є тест блоку) тест
+// складено. Для legacy-курсів зі старим підсумковим тестом на рівні
+// курсу (Test.courseId) цей тест враховується як додатковий "фінальний
+// блок" понад звичайні уроки.
 
 'use strict';
 
-const { fn, col } = require('sequelize');
+const { Op } = require('sequelize');
 const { Course, Lesson, Progress, Enrollment, Category, Test, Result } = require('../models');
+
+// Вага уроку і його тесту в межах одного блоку.
+// Якщо в блоці немає тесту — урок важить 100% блоку.
+const LESSON_WEIGHT_IN_BLOCK = 70;
+const TEST_WEIGHT_IN_BLOCK = 30;
 
 // ─────────────────────────────────────────────────────────────
 // MARK LESSON PROGRESS
@@ -68,13 +80,12 @@ const markLessonProgress = async (userId, lessonId, completed) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// ДОПОМІЖНА ФУНКЦІЯ: статус тесту студента по курсу
+// ДОПОМІЖНА ФУНКЦІЯ: статус курсового (legacy) тесту студента
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Повертає статус тесту студента по курсу.
- * Якщо тесту немає взагалі — hasTest: false, passed: null (не блокує
- * завершення курсу — курс без тесту завершується лише уроками).
+ * Повертає статус підсумкового (legacy, courseId) тесту студента по курсу.
+ * Якщо такого тесту немає взагалі — hasTest: false, passed: null.
  *
  * @param {string} userId
  * @param {string} courseId
@@ -104,15 +115,153 @@ const getTestStatus = async (userId, courseId) => {
 };
 
 // ─────────────────────────────────────────────────────────────
+// ДОПОМІЖНА ФУНКЦІЯ: побудова блоків курсу з прогресом одного студента
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Будує список блоків курсу (урок + опціональний тест блоку) разом з
+ * прогресом конкретного студента по кожному блоку, а також зведений
+ * прогрес по всьому курсу (включно з legacy курсовим тестом, якщо є).
+ *
+ * @param {string} userId
+ * @param {string} courseId
+ * @returns {{ blocks, totalLessons, completedLessons, percentage, allLessonsDone, isCompleted, legacyTest }}
+ */
+const buildCourseBlocksProgress = async (userId, courseId) => {
+  const lessons = await Lesson.findAll({
+    where: { courseId },
+    attributes: ['id', 'title', 'type', 'order'],
+    order: [['order', 'ASC']],
+  });
+
+  const lessonIds = lessons.map((l) => l.id);
+
+  // Прогрес студента по уроках цього курсу
+  const completedProgress = await Progress.findAll({
+    where: { userId, lessonId: lessonIds, completed: true },
+    attributes: ['lessonId', 'completedAt'],
+  });
+  const completedLessonMap = {};
+  completedProgress.forEach((p) => {
+    completedLessonMap[p.lessonId] = p.completedAt;
+  });
+
+  // Тести блоків (Test.lessonId) для всіх уроків курсу одним запитом
+  const blockTests = lessonIds.length
+    ? await Test.findAll({
+        where: { lessonId: { [Op.in]: lessonIds } },
+        attributes: ['id', 'lessonId', 'title', 'passingScore'],
+      })
+    : [];
+  const blockTestByLessonId = {};
+  blockTests.forEach((t) => {
+    blockTestByLessonId[t.lessonId] = t;
+  });
+
+  // Результати студента по всіх тестах блоків одним запитом
+  const blockTestIds = blockTests.map((t) => t.id);
+  const blockResults = blockTestIds.length
+    ? await Result.findAll({
+        where: { userId, testId: { [Op.in]: blockTestIds } },
+        attributes: ['testId', 'score', 'passed'],
+      })
+    : [];
+  const resultsByTestId = {};
+  blockResults.forEach((r) => {
+    if (!resultsByTestId[r.testId]) resultsByTestId[r.testId] = [];
+    resultsByTestId[r.testId].push(r);
+  });
+
+  // ── Формуємо блоки ──
+  let completedLessonsCount = 0;
+  let blockWeightSum = 0;
+  let blockWeightEarned = 0;
+  let allBlocksDone = true;
+
+  const blocks = lessons.map((lesson) => {
+    const lessonCompleted = !!completedLessonMap[lesson.id];
+    if (lessonCompleted) completedLessonsCount += 1;
+
+    const blockTest = blockTestByLessonId[lesson.id] || null;
+    const testResults = blockTest ? resultsByTestId[blockTest.id] || [] : [];
+    const testPassed = blockTest ? testResults.some((r) => r.passed) : null;
+    const testBestScore =
+      testResults.length > 0 ? Math.max(...testResults.map((r) => r.score)) : null;
+
+    const blockCompleted = lessonCompleted && (!blockTest || testPassed);
+    if (!blockCompleted) allBlocksDone = false;
+
+    // Зважений % всередині блоку: 100% якщо тесту немає, інакше 70/30
+    const lessonWeight = blockTest ? LESSON_WEIGHT_IN_BLOCK : 100;
+    const testWeight = blockTest ? TEST_WEIGHT_IN_BLOCK : 0;
+
+    blockWeightSum += 100;
+    blockWeightEarned += (lessonCompleted ? lessonWeight : 0) + (testPassed ? testWeight : 0);
+
+    return {
+      lesson: { id: lesson.id, title: lesson.title, type: lesson.type, order: lesson.order },
+      lessonCompleted,
+      completedAt: completedLessonMap[lesson.id] || null,
+      test: blockTest
+        ? {
+            id: blockTest.id,
+            title: blockTest.title,
+            passingScore: blockTest.passingScore,
+            passed: testPassed,
+            bestScore: testBestScore,
+            attemptsCount: testResults.length,
+          }
+        : null,
+      isCompleted: blockCompleted,
+    };
+  });
+
+  const totalLessons = lessons.length;
+  const allLessonsDone = totalLessons > 0 && completedLessonsCount === totalLessons;
+
+  // ── Legacy курсовий тест (Test.courseId) — рахується як додатковий блок ──
+  const legacyTest = await getTestStatus(userId, courseId);
+
+  let percentage;
+  if (blockWeightSum > 0) {
+    // Є хоча б один блок (урок) — рахуємо середній % по блоках,
+    // а курсовий тест (якщо є) додаємо як ще один блок у те саме середнє.
+    if (legacyTest.hasTest) {
+      const totalUnits = blocks.length + 1;
+      const legacyEarned = legacyTest.passed ? 100 : 0;
+      percentage = Math.round((blockWeightEarned + legacyEarned) / totalUnits);
+    } else {
+      percentage = Math.round(blockWeightEarned / blocks.length);
+    }
+  } else {
+    // Немає жодного уроку — лишається тільки курсовий тест (або нічого)
+    percentage = legacyTest.hasTest ? (legacyTest.passed ? 100 : 0) : 0;
+  }
+
+  const isCompleted = allLessonsDone && allBlocksDone && (!legacyTest.hasTest || legacyTest.passed);
+
+  return {
+    blocks,
+    totalLessons,
+    completedLessons: completedLessonsCount,
+    percentage,
+    allLessonsDone,
+    allBlocksDone,
+    isCompleted,
+    legacyTest,
+  };
+};
+
+// ─────────────────────────────────────────────────────────────
 // GET COURSE PROGRESS
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Повертає прогрес студента по конкретному курсу.
+ * Повертає прогрес студента по конкретному курсу, побудований по блоках
+ * "урок-тест".
  *
- * isCompleted = 100% уроків пройдено ТА (тесту немає АБО тест складено).
- * Без цієї перевірки студент міг отримати "курс завершено" просто
- * прочитавши всі уроки, навіть не здавши чи провалив тест.
+ * isCompleted = всі блоки завершені (урок + тест блоку, якщо є) ТА
+ * (legacy курсового тесту немає АБО він складений).
  *
  * @param {string} userId
  * @param {string} courseId
@@ -127,62 +276,38 @@ const getCourseProgress = async (userId, courseId) => {
     throw err;
   }
 
-  // Всі уроки курсу
-  const lessons = await Lesson.findAll({
-    where: { courseId },
-    attributes: ['id', 'title', 'type', 'order'],
-    order: [['order', 'ASC']],
-  });
+  const {
+    blocks,
+    totalLessons,
+    completedLessons,
+    percentage,
+    allLessonsDone,
+    allBlocksDone,
+    isCompleted,
+    legacyTest,
+  } = await buildCourseBlocksProgress(userId, courseId);
 
-  // Пройдені уроки цього студента
-  const completedProgress = await Progress.findAll({
-    where: {
-      userId,
-      lessonId: lessons.map((l) => l.id),
-      completed: true,
-    },
-    attributes: ['lessonId', 'completedAt'],
-  });
-
-  const completedSet = new Set(completedProgress.map((p) => p.lessonId));
-
-  // Об'єднуємо дані
-  const lessonsWithProgress = lessons.map((lesson) => ({
-    id: lesson.id,
-    title: lesson.title,
-    type: lesson.type,
-    order: lesson.order,
-    completed: completedSet.has(lesson.id),
-    completedAt: completedProgress.find((p) => p.lessonId === lesson.id)?.completedAt || null,
+  // lessons — лишаємо у відповіді для зворотної сумісності з клієнтами,
+  // які ще читають "плаский" список уроків замість blocks.
+  const lessonsWithProgress = blocks.map((b) => ({
+    id: b.lesson.id,
+    title: b.lesson.title,
+    type: b.lesson.type,
+    order: b.lesson.order,
+    completed: b.lessonCompleted,
+    completedAt: b.completedAt,
   }));
-
-  const totalLessons = lessons.length;
-  const completedCount = completedSet.size;
-  const allLessonsDone = totalLessons > 0 && completedCount === totalLessons;
-
-  // Враховуємо тест у визначенні "завершеності" курсу
-  const testStatus = await getTestStatus(userId, courseId);
-  const isCompleted = allLessonsDone && (!testStatus.hasTest || testStatus.passed);
-
-  // ── Зважений прогрес: уроки = 70%, тест = 30% ──
-  // Якщо в курсі немає уроків — лекційна частина вважається "виконаною" (70%).
-  // Якщо тесту немає взагалі (теоретично, бо публікація без тесту заблокована) —
-  // тестова частина теж вважається "виконаною" (30%), щоб не псувати % за відсутній тест.
-  const LESSONS_WEIGHT = 70;
-  const TEST_WEIGHT = 30;
-
-  const lessonsPart = totalLessons > 0 ? (completedCount / totalLessons) * LESSONS_WEIGHT : LESSONS_WEIGHT;
-  const testPart = !testStatus.hasTest ? TEST_WEIGHT : (testStatus.passed ? TEST_WEIGHT : 0);
-  const percentage = Math.round(lessonsPart + testPart);
 
   return {
     courseId,
     totalLessons,
-    completedLessons: completedCount,
+    completedLessons,
     percentage,
     allLessonsDone,
+    allBlocksDone,
     isCompleted,
-    test: testStatus,
+    test: legacyTest,
+    blocks,
     lessons: lessonsWithProgress,
   };
 };
@@ -206,9 +331,7 @@ const getAllUserProgress = async (userId) => {
         model: Course,
         as: 'course',
         attributes: ['id', 'title', 'coverImage', 'price'],
-        include: [
-          { model: Category, as: 'category', attributes: ['id', 'name', 'icon'] },
-        ],
+        include: [{ model: Category, as: 'category', attributes: ['id', 'name', 'icon'] }],
       },
     ],
     attributes: ['courseId', 'enrolledAt'],
@@ -218,102 +341,41 @@ const getAllUserProgress = async (userId) => {
     return [];
   }
 
-  const courseIds = enrollments.map((e) => e.courseId);
+  // Прогрес по блоках рахуємо по кожному курсу окремо — N+1 по курсам
+  // студента (зазвичай невелика кількість), але кожен виклик всередині
+  // вже пакетний по уроках/тестах одного курсу.
+  const results = await Promise.all(
+    enrollments.map(async (enrollment) => {
+      const courseId = enrollment.courseId;
+      const {
+        totalLessons,
+        completedLessons,
+        percentage,
+        allLessonsDone,
+        isCompleted,
+        legacyTest,
+      } = await buildCourseBlocksProgress(userId, courseId);
 
-  // Кількість уроків по кожному курсу
-  const lessonCounts = await Lesson.findAll({
-    where: { courseId: courseIds },
-    attributes: [
-      'courseId',
-      [fn('COUNT', col('id')), 'total'],
-    ],
-    group: ['courseId'],
-    raw: true,
-  });
+      return {
+        course: enrollment.course,
+        enrolledAt: enrollment.enrolledAt,
+        totalLessons,
+        completedLessons,
+        percentage,
+        allLessonsDone,
+        isCompleted,
+        test: { hasTest: legacyTest.hasTest, passed: legacyTest.passed },
+      };
+    }),
+  );
 
-  const lessonCountMap = {};
-  lessonCounts.forEach((row) => {
-    lessonCountMap[row.courseId] = parseInt(row.total, 10);
-  });
-
-  // Пройдені уроки студента по цих курсах
-  const completedProgress = await Progress.findAll({
-    where: { userId, completed: true },
-    include: [
-      {
-        model: Lesson,
-        as: 'lesson',
-        attributes: ['courseId'],
-        where: { courseId: courseIds },
-        required: true,
-      },
-    ],
-    attributes: ['id'],
-    raw: true,
-  });
-
-  // Рахуємо пройдені уроки по кожному курсу
-  const completedCountMap = {};
-  completedProgress.forEach((row) => {
-    const cId = row['lesson.courseId'];
-    completedCountMap[cId] = (completedCountMap[cId] || 0) + 1;
-  });
-
-  // ── Тести по всіх курсах студента одним запитом ──
-  const tests = await Test.findAll({
-    where: { courseId: courseIds },
-    attributes: ['id', 'courseId'],
-    raw: true,
-  });
-
-  const courseTestMap = {};
-  tests.forEach((t) => {
-    courseTestMap[t.courseId] = t.id;
-  });
-
-  const testIds = tests.map((t) => t.id);
-
-  const allResults = testIds.length
-    ? await Result.findAll({
-        where: { userId, testId: testIds },
-        attributes: ['testId', 'passed'],
-        raw: true,
-      })
-    : [];
-
-  const passedTestIds = new Set(allResults.filter((r) => r.passed).map((r) => r.testId));
-
-  // Збираємо фінальну відповідь
-  const LESSONS_WEIGHT = 70;
-  const TEST_WEIGHT = 30;
-
-  return enrollments.map((enrollment) => {
-    const courseId = enrollment.courseId;
-    const total = lessonCountMap[courseId] || 0;
-    const completed = completedCountMap[courseId] || 0;
-    const allLessonsDone = total > 0 && completed === total;
-
-    const testId = courseTestMap[courseId];
-    const hasTest = !!testId;
-    const testPassed = hasTest ? passedTestIds.has(testId) : null;
-
-    const isCompleted = allLessonsDone && (!hasTest || testPassed);
-
-    const lessonsPart = total > 0 ? (completed / total) * LESSONS_WEIGHT : LESSONS_WEIGHT;
-    const testPart = !hasTest ? TEST_WEIGHT : (testPassed ? TEST_WEIGHT : 0);
-    const percentage = Math.round(lessonsPart + testPart);
-
-    return {
-      course: enrollment.course,
-      enrolledAt: enrollment.enrolledAt,
-      totalLessons: total,
-      completedLessons: completed,
-      percentage,
-      allLessonsDone,
-      isCompleted,
-      test: { hasTest, passed: testPassed },
-    };
-  });
+  return results;
 };
 
-module.exports = { markLessonProgress, getCourseProgress, getAllUserProgress, getTestStatus };
+module.exports = {
+  markLessonProgress,
+  getCourseProgress,
+  getAllUserProgress,
+  getTestStatus,
+  buildCourseBlocksProgress,
+};

@@ -101,4 +101,64 @@ const updateTest = async (req, res, next) => {
   }
 };
 
-module.exports = { getTestByCourse, createTest, updateTest, submitTest, getUserTestResults };
+/**
+ * GET /api/v1/tests/lesson/:lessonId
+ * Повертає тест блоку (прив'язаний до уроку). Студенту — без правильних
+ * відповідей, доступний лише після завершення уроку цього блоку.
+ */
+const getTestByLesson = async (req, res, next) => {
+  try {
+    const test = await testService.getTestByLesson(req.params.lessonId, req.user || null);
+    return res.status(200).json({ success: true, data: { test } });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * POST /api/v1/tests/lesson/:lessonId
+ * Створення тесту блоку, прив'язаного до уроку. Тільки власник-викладач.
+ * Body: { title, questions: [{question, options, correctIndex}], passingScore? }
+ */
+const createTestForLesson = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, errors: errors.array() });
+    }
+
+    const test = await testService.createTestForLesson(req.user.id, req.params.lessonId, req.body);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Тест блоку створено.',
+      data: { test },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * GET /api/v1/tests/lesson/:lessonId/results
+ * Результати поточного користувача по тесту блоку.
+ */
+const getUserTestResultsByLesson = async (req, res, next) => {
+  try {
+    const results = await testService.getUserTestResultsByLesson(req.user.id, req.params.lessonId);
+    return res.status(200).json({ success: true, data: { results } });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+module.exports = {
+  getTestByCourse,
+  getTestByLesson,
+  createTest,
+  createTestForLesson,
+  updateTest,
+  submitTest,
+  getUserTestResults,
+  getUserTestResultsByLesson,
+};

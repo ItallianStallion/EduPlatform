@@ -33,12 +33,64 @@ router.post(
   checkRole('teacher'),
   [
     param('courseId').isUUID(4).withMessage('Невірний формат ID курсу'),
-    body('title').trim().notEmpty().withMessage('Назва тесту обов\'язкова'),
+    body('title').trim().notEmpty().withMessage("Назва тесту обов'язкова"),
     body('questions').isArray({ min: 1 }).withMessage('Потрібно хоча б одне питання'),
     body('passingScore').optional().isInt({ min: 0, max: 100 }),
-    body('maxAttempts').optional({ nullable: true }).isInt({ min: 1 }).withMessage('maxAttempts повинен бути цілим числом ≥ 1 (або не вказаний для необмеженої кількості)'),
+    body('maxAttempts')
+      .optional({ nullable: true })
+      .isInt({ min: 1 })
+      .withMessage(
+        'maxAttempts повинен бути цілим числом ≥ 1 (або не вказаний для необмеженої кількості)',
+      ),
   ],
   testController.createTest,
+);
+
+/**
+ * GET /api/v1/tests/lesson/:lessonId
+ * Тест блоку (без правильних відповідей для студента). Доступний лише
+ * після завершення уроку цього блоку.
+ */
+router.get(
+  '/lesson/:lessonId',
+  authenticate,
+  [param('lessonId').isUUID(4).withMessage('Невірний формат ID уроку')],
+  testController.getTestByLesson,
+);
+
+/**
+ * POST /api/v1/tests/lesson/:lessonId
+ * Створення тесту блоку, прив'язаного до уроку. Тільки викладач-власник курсу.
+ * Body: { title, questions: [{ question, options, correctIndex }], passingScore? }
+ */
+router.post(
+  '/lesson/:lessonId',
+  authenticate,
+  checkRole('teacher'),
+  [
+    param('lessonId').isUUID(4).withMessage('Невірний формат ID уроку'),
+    body('title').trim().notEmpty().withMessage("Назва тесту обов'язкова"),
+    body('questions').isArray({ min: 1 }).withMessage('Потрібно хоча б одне питання'),
+    body('passingScore').optional().isInt({ min: 0, max: 100 }),
+    body('maxAttempts')
+      .optional({ nullable: true })
+      .isInt({ min: 1 })
+      .withMessage(
+        'maxAttempts повинен бути цілим числом ≥ 1 (або не вказаний для необмеженої кількості)',
+      ),
+  ],
+  testController.createTestForLesson,
+);
+
+/**
+ * GET /api/v1/tests/lesson/:lessonId/results
+ * Результати поточного студента по тесту блоку.
+ */
+router.get(
+  '/lesson/:lessonId/results',
+  authenticate,
+  [param('lessonId').isUUID(4).withMessage('Невірний формат ID уроку')],
+  testController.getUserTestResultsByLesson,
 );
 
 /**

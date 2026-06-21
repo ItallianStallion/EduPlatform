@@ -5,7 +5,7 @@
 
 const { Op, fn, col, literal } = require('sequelize');
 const { sequelize } = require('../config/database');
-const { Course, User, Category, Enrollment, Test } = require('../models');
+const { Course, User, Category, Enrollment, Test, Lesson } = require('../models');
 const { redisClient } = require('../config/redis');
 
 const COURSES_CACHE_TTL = 5 * 60; // 5 хвилин кешування каталогу
@@ -116,11 +116,7 @@ const getCourses = async ({
         attributes: ['id', 'name', 'icon'],
       },
     ],
-    group: [
-      'Course.id',
-      'teacher.id',
-      'category.id',
-    ],
+    group: ['Course.id', 'teacher.id', 'category.id'],
     order,
     limit: parseInt(limit, 10),
     offset,
@@ -137,7 +133,9 @@ const getCourses = async ({
   };
 
   // Кешуємо результат у Redis
-  await redisClient.set(cacheKey, JSON.stringify(result), 'EX', COURSES_CACHE_TTL).catch(() => null);
+  await redisClient
+    .set(cacheKey, JSON.stringify(result), 'EX', COURSES_CACHE_TTL)
+    .catch(() => null);
 
   return result;
 };
@@ -219,10 +217,7 @@ const enrollInCourse = async (courseId, studentId) => {
     });
 
     // Створюємо запис про зарахування
-    const enrollment = await Enrollment.create(
-      { userId: studentId, courseId },
-      { transaction },
-    );
+    const enrollment = await Enrollment.create({ userId: studentId, courseId }, { transaction });
 
     await transaction.commit();
 
@@ -274,7 +269,9 @@ const simulatePayment = async ({ amount, studentId, courseId }) => {
   // Генеруємо ID транзакції (у реальному — з відповіді Stripe)
   const transactionId = `txn_sim_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-  console.info(`[Payment] Симуляція оплати: ${amount} UAH, студент: ${studentId}, курс: ${courseId}, txn: ${transactionId}`);
+  console.info(
+    `[Payment] Симуляція оплати: ${amount} UAH, студент: ${studentId}, курс: ${courseId}, txn: ${transactionId}`,
+  );
 
   return { success: true, transactionId, amount };
 };
@@ -415,11 +412,21 @@ const setCourseStatus = async (courseId, teacherId, action) => {
       throw err;
     }
 
-    // Курс ОБОВ'ЯЗКОВО повинен мати фінальний тест перед публікацією
-    const finalTest = await Test.findOne({ where: { courseId } });
-    if (!finalTest) {
+    // Курс ОБОВ'ЯЗКОВО повинен мати хоча б один тест перед публікацією —
+    // або legacy підсумковий тест курсу (Test.courseId), або тест хоча б
+    // одного блоку "урок-тест" (Test.lessonId на урок цього курсу).
+    const courseTest = await Test.findOne({ where: { courseId } });
+    const blockTest = courseTest
+      ? null
+      : await Test.findOne({
+          include: [
+            { model: Lesson, as: 'lesson', attributes: [], where: { courseId }, required: true },
+          ],
+        });
+
+    if (!courseTest && !blockTest) {
       const err = new Error(
-        'Перед публікацією курсу потрібно створити фінальний тест.',
+        'Перед публікацією курсу потрібно створити хоча б один тест — підсумковий тест курсу або тест хоча б одного блоку "урок-тест".',
       );
       err.statusCode = 422;
       err.isOperational = true;

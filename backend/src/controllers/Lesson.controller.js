@@ -20,6 +20,21 @@ const getLessonsByCourse = async (req, res, next) => {
 };
 
 /**
+ * GET /api/v1/lessons/course/:courseId/blocks
+ * Курс як список блоків: кожен блок = урок + метадані тесту цього блоку
+ * (без питань/відповідей). Зручно для рендеру структури "урок-тест,
+ * урок-тест" одним запитом.
+ */
+const getCourseBlocks = async (req, res, next) => {
+  try {
+    const blocks = await lessonService.getCourseBlocks(req.params.courseId, req.user);
+    return res.status(200).json({ success: true, data: { blocks } });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
  * GET /api/v1/lessons/:id
  * Деталі одного уроку.
  */
@@ -85,4 +100,11 @@ const deleteLesson = async (req, res, next) => {
   }
 };
 
-module.exports = { getLessonsByCourse, getLessonById, createLesson, updateLesson, deleteLesson };
+module.exports = {
+  getLessonsByCourse,
+  getCourseBlocks,
+  getLessonById,
+  createLesson,
+  updateLesson,
+  deleteLesson,
+};

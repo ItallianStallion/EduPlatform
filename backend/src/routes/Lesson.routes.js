@@ -32,7 +32,7 @@ router.post(
   checkRole('teacher'),
   [
     param('courseId').isUUID(4).withMessage('Невірний формат ID курсу'),
-    body('title').trim().notEmpty().withMessage('Назва уроку обов\'язкова'),
+    body('title').trim().notEmpty().withMessage("Назва уроку обов'язкова"),
     body('type').optional().isIn(['video', 'text', 'pdf']),
     body('content').optional({ nullable: true }).isString(),
     body('videoUrl').optional({ nullable: true }).isString(),
@@ -40,6 +40,18 @@ router.post(
     body('order').optional().isInt({ min: 0 }),
   ],
   lessonController.createLesson,
+);
+
+/**
+ * GET /api/v1/lessons/course/:courseId/blocks
+ * Курс як список блоків (урок + метадані тесту блоку). Доступ: записаний
+ * студент / власник-викладач / admin.
+ */
+router.get(
+  '/course/:courseId/blocks',
+  authenticate,
+  [param('courseId').isUUID(4).withMessage('Невірний формат ID курсу')],
+  lessonController.getCourseBlocks,
 );
 
 /**

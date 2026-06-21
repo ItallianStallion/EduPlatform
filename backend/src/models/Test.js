@@ -1,5 +1,8 @@
 // src/models/Test.js
-// Тест курсу. Один курс має один підсумковий тест.
+// Тест курсу або тест блоку (урок+тест).
+// Тест прив'язується АБО до courseId (старий формат — підсумковий тест
+// курсу), АБО до lessonId (новий формат — тест конкретного блоку
+// "урок-тест"). Рівно одне з двох полів має бути заповнене.
 // Питання зберігаються як JSONB-масив для гнучкості без окремої таблиці.
 
 'use strict';
@@ -15,7 +18,9 @@ const Test = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    // courseId визначається через association у models/index.js
+    // courseId та lessonId визначаються через associations у models/index.js.
+    // courseId (nullable) — для старого формату "один тест на курс".
+    // lessonId (nullable, unique) — для нового формату "тест блоку".
     title: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -40,7 +45,11 @@ const Test = sequelize.define(
             if (!Array.isArray(q.options) || q.options.length < 2) {
               throw new Error(`Питання #${i + 1}: потрібно мінімум 2 варіанти відповіді`);
             }
-            if (typeof q.correctIndex !== 'number' || q.correctIndex < 0 || q.correctIndex >= q.options.length) {
+            if (
+              typeof q.correctIndex !== 'number' ||
+              q.correctIndex < 0 ||
+              q.correctIndex >= q.options.length
+            ) {
               throw new Error(`Питання #${i + 1}: невірний correctIndex`);
             }
           });
@@ -53,7 +62,7 @@ const Test = sequelize.define(
       allowNull: false,
       defaultValue: 70,
       validate: {
-        min: { args: [0], msg: 'Прохідний бал не може бути від\'ємним' },
+        min: { args: [0], msg: "Прохідний бал не може бути від'ємним" },
         max: { args: [100], msg: 'Прохідний бал не може перевищувати 100' },
       },
     },
@@ -73,8 +82,26 @@ const Test = sequelize.define(
     tableName: 'tests',
     timestamps: true,
     indexes: [
-      { unique: true, fields: ['course_id'] },
+      // courseId більше не unique — курс може мати кілька тестів
+      // (по одному на блок) + опціонально один підсумковий курсовий тест.
+      { fields: ['course_id'] },
+      // Один тест на урок (блок) — урок не може мати два тести.
+      { unique: true, fields: ['lesson_id'] },
     ],
+    validate: {
+      // Тест повинен належати рівно одному "власнику": або курсу
+      // (підсумковий тест), або уроку (тест блоку). Ніколи обом і
+      // ніколи жодному — інакше незрозуміло, де його показувати.
+      exactlyOneOwner() {
+        const hasCourse = !!this.courseId;
+        const hasLesson = !!this.lessonId;
+        if (hasCourse === hasLesson) {
+          throw new Error(
+            "Тест повинен бути прив'язаний рівно до одного: або courseId (підсумковий тест курсу), або lessonId (тест блоку).",
+          );
+        }
+      },
+    },
   },
 );
 

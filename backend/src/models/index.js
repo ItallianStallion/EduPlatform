@@ -13,10 +13,10 @@ const Enrollment = require('./Enrollment');
 // Моделі Dev #2
 // ─────────────────────────────────────────────────────────────
 const UserProfile = require('./UserProfile');
-const Lesson      = require('./Lesson');
-const Progress    = require('./Progress');
-const Test        = require('./Test');
-const Result      = require('./Result');
+const Lesson = require('./Lesson');
+const Progress = require('./Progress');
+const Test = require('./Test');
+const Result = require('./Result');
 
 // --- User ↔ Course (викладач є автором багатьох курсів) ---
 User.hasMany(Course, {
@@ -75,9 +75,23 @@ Progress.belongsTo(User, { foreignKey: 'userId', as: 'student' });
 Lesson.hasMany(Progress, { foreignKey: 'lessonId', as: 'progress', onDelete: 'CASCADE' });
 Progress.belongsTo(Lesson, { foreignKey: 'lessonId', as: 'lesson' });
 
-// Test: курс має один тест
-Course.hasOne(Test, { foreignKey: 'courseId', as: 'test', onDelete: 'CASCADE' });
-Test.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+// Test: курс має опціонально один підсумковий тест (legacy-формат —
+// курс без блокової структури, де тест прив'язаний напряму до курсу).
+Course.hasOne(Test, {
+  foreignKey: { name: 'courseId', allowNull: true },
+  as: 'test',
+  onDelete: 'CASCADE',
+});
+Test.belongsTo(Course, { foreignKey: { name: 'courseId', allowNull: true }, as: 'course' });
+
+// Test: урок (блок) має опціонально один тест — новий формат
+// "урок-тест". Один урок не може мати два тести (unique index у моделі).
+Lesson.hasOne(Test, {
+  foreignKey: { name: 'lessonId', allowNull: true },
+  as: 'test',
+  onDelete: 'CASCADE',
+});
+Test.belongsTo(Lesson, { foreignKey: { name: 'lessonId', allowNull: true }, as: 'lesson' });
 
 // Result: кожна спроба здачі тесту студентом (для лічильника maxAttempts)
 User.hasMany(Result, { foreignKey: 'userId', as: 'testResults' });
@@ -86,4 +100,14 @@ Result.belongsTo(User, { foreignKey: 'userId', as: 'student' });
 Test.hasMany(Result, { foreignKey: 'testId', as: 'results', onDelete: 'CASCADE' });
 Result.belongsTo(Test, { foreignKey: 'testId', as: 'test' });
 
-module.exports = { User, Category, Course, Enrollment, UserProfile, Lesson, Progress, Test, Result };
+module.exports = {
+  User,
+  Category,
+  Course,
+  Enrollment,
+  UserProfile,
+  Lesson,
+  Progress,
+  Test,
+  Result,
+};
