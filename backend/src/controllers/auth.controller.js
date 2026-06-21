@@ -8,10 +8,13 @@ const { validationResult } = require('express-validator');
 const authService = require('../services/auth.service');
 
 // Константи для налаштування cookies
+// sameSite: 'none' потрібен коли фронтенд і бекенд на різних доменах (cross-origin).
+// Вимагає secure: true, тому в production завжди https.
+const IS_PROD = process.env.NODE_ENV === 'production';
 const COOKIE_OPTIONS_BASE = {
-  httpOnly: true,     // Недоступно через document.cookie (захист від XSS)
-  secure: process.env.NODE_ENV === 'production', // HTTPS тільки у prod
-  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict', // Захист від CSRF
+  httpOnly: true,
+  secure: IS_PROD,
+  sameSite: IS_PROD ? 'none' : 'strict',
 };
 
 /**
@@ -87,9 +90,8 @@ const refresh = async (req, res, next) => {
 const logout = async (req, res, next) => {
   try {
     // req.user встановлюється middleware authenticate
-     const accessToken = req.cookies?.accessToken;
     if (req.user?.id) {
-       await authService.logout(req.user.id, accessToken);
+      await authService.logout(req.user.id);
     }
 
     // Очищуємо cookies
