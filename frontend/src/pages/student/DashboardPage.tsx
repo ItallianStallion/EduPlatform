@@ -78,7 +78,7 @@ export function DashboardPage() {
           title="Ви ще не записані на жоден курс"
           description="Перегляньте каталог і оберіть перший курс для навчання."
           action={
-            <Link to="/">
+            <Link to="/catalog">
               <Button variant="ghost">Перейти до каталогу</Button>
             </Link>
           }
