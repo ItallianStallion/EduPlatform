@@ -104,10 +104,10 @@ export function TestPage() {
               <div
                 key={idx}
                 className={`flex items-start gap-2 rounded-md px-3 py-2 text-sm ${
-                  d.correct ? "bg-teal/5 text-teal-dark" : "bg-coral/5 text-coral-dark"
+                  d.isCorrect ? "bg-teal/5 text-teal-dark" : "bg-coral/5 text-coral-dark"
                 }`}
               >
-                {d.correct ? (
+                {d.isCorrect ? (
                   <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
                 ) : (
                   <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
