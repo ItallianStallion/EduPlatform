@@ -161,7 +161,7 @@ export interface TestSubmitResult {
   passed: boolean;
   correctCount: number;
   totalQuestions: number;
-  details: { question: string; correct: boolean; correctIndex: number }[];
+  details: { question: string; yourAnswer: string; correctAnswer: string; isCorrect: boolean }[];
 }
 
 export interface Enrollment {
