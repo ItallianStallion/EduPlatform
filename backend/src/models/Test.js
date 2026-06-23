@@ -18,9 +18,10 @@ const Test = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    // courseId та lessonId визначаються через associations у models/index.js.
-    // courseId (nullable) — для старого формату "один тест на курс".
-    // lessonId (nullable, unique) — для нового формату "тест блоку".
+    // courseId, lessonId та topicId визначаються через associations у models/index.js.
+    // courseId (nullable) — підсумковий тест курсу.
+    // lessonId (nullable, unique) — тест блоку (урок+тест).
+    // topicId (nullable, unique) — тест теми.
     title: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -87,17 +88,18 @@ const Test = sequelize.define(
       { fields: ['course_id'] },
       // Один тест на урок (блок) — урок не може мати два тести.
       { unique: true, fields: ['lesson_id'] },
+      // Один тест на тему.
+      { unique: true, fields: ['topic_id'] },
     ],
     validate: {
       // Тест повинен належати рівно одному "власнику": або курсу
       // (підсумковий тест), або уроку (тест блоку). Ніколи обом і
       // ніколи жодному — інакше незрозуміло, де його показувати.
       exactlyOneOwner() {
-        const hasCourse = !!this.courseId;
-        const hasLesson = !!this.lessonId;
-        if (hasCourse === hasLesson) {
+        const owners = [!!this.courseId, !!this.lessonId, !!this.topicId].filter(Boolean);
+        if (owners.length !== 1) {
           throw new Error(
-            "Тест повинен бути прив'язаний рівно до одного: або courseId (підсумковий тест курсу), або lessonId (тест блоку).",
+            "Тест повинен бути прив'язаний рівно до одного: courseId, lessonId або topicId.",
           );
         }
       },

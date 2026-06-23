@@ -14,7 +14,7 @@ const Lesson = sequelize.define(
       defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    // courseId визначається через association у models/index.js
+    // courseId та topicId визначаються через associations у models/index.js
     title: {
       type: DataTypes.STRING(255),
       allowNull: false,
@@ -43,7 +43,13 @@ const Lesson = sequelize.define(
       allowNull: true,
       comment: 'URL PDF-файлу (S3/R2)',
     },
-    // Порядок уроків у курсі
+    // topicId — опціональний, якщо урок входить до теми
+    topicId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      defaultValue: null,
+    },
+    // Порядок уроків у курсі (або в темі якщо topicId є)
     order: {
       type: DataTypes.INTEGER,
       allowNull: false,
@@ -59,6 +65,7 @@ const Lesson = sequelize.define(
     indexes: [
       { fields: ['course_id'] },
       { fields: ['course_id', 'order'] },
+      { fields: ['topic_id'] },
     ],
   },
 );
