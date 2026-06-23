@@ -10,7 +10,7 @@
 
 'use strict';
 
-const { Test, Course, Enrollment, Result, Lesson, Progress } = require('../models');
+const { Test, Course, Enrollment, Result, Lesson, Progress, Topic } = require('../models');
 
 // ─────────────────────────────────────────────────────────────
 // ДОПОМІЖНІ ФУНКЦІЇ
