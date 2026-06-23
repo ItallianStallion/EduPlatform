@@ -71,14 +71,23 @@ const getTopicsByCourse = async (courseId, requester) => {
       {
         model: Test,
         as: 'test',
-        attributes: ['id', 'title', 'passingScore', 'maxAttempts', 'questionsCount'],
+        attributes: ['id', 'title', 'passingScore', 'maxAttempts', 'questions'],
         required: false,
       },
     ],
     order: [['order', 'ASC']],
   });
 
-  return topics;
+  // Перетворюємо questions (JSONB масив) → questionsCount для клієнта,
+  // щоб не передавати весь масив питань у списку тем.
+  return topics.map((topic) => {
+    const t = topic.toJSON();
+    if (t.test) {
+      t.test.questionsCount = Array.isArray(t.test.questions) ? t.test.questions.length : 0;
+      delete t.test.questions;
+    }
+    return t;
+  });
 };
 
 // ─── CREATE ──────────────────────────────────────────────────
