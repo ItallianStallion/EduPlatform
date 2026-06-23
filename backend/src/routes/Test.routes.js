@@ -140,6 +140,30 @@ router.patch(
 
 
 /**
+ * GET /api/v1/tests/topic/:topicId
+ * Тест теми (без правильних відповідей для студента).
+ */
+router.get(
+  '/topic/:topicId',
+  authenticate,
+  [param('topicId').isUUID(4).withMessage('Невірний формат ID теми')],
+  async (req, res, next) => {
+    const { validationResult } = require('express-validator');
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, errors: errors.array() });
+    }
+    try {
+      const { getTestByTopic } = require('../services/test.service');
+      const test = await getTestByTopic(req.params.topicId, req.user);
+      return res.json({ success: true, data: { test } });
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+/**
  * POST /api/v1/tests/topic/:topicId
  * Створення тесту для теми курсу.
  */

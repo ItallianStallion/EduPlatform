@@ -561,6 +561,76 @@ const getUserTestResultsByLesson = async (userId, lessonId) => {
 
 
 // ─────────────────────────────────────────────────────────────
+// GET TEST BY TOPIC
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Повертає тест теми для студента або викладача/адміна.
+ *
+ * @param {string} topicId
+ * @param {object} requester - об'єкт поточного користувача ({ id, role })
+ */
+const getTestByTopic = async (topicId, requester) => {
+  const topic = await Topic.findByPk(topicId, { include: [{ model: Course, as: 'course' }] });
+
+  if (!topic) {
+    const err = new Error('Тему не знайдено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  const { course } = topic;
+  const isOwnerOrAdmin =
+    requester &&
+    (requester.role === 'admin' ||
+      (requester.role === 'teacher' && course?.teacherId === requester.id));
+
+  if (!course || (course.status !== 'published' && !isOwnerOrAdmin)) {
+    const err = new Error('Курс не знайдено або ще не опубліковано.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  const test = await Test.findOne({ where: { topicId } });
+
+  if (!test) {
+    const err = new Error('Тест для цієї теми ще не створено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  if (isOwnerOrAdmin) {
+    // Додаємо courseId з теми, щоб фронтенд міг побудувати посилання "назад до курсу"
+    return { ...test.toJSON(), courseId: course.id };
+  }
+
+  if (!requester) {
+    const err = new Error('Потрібна авторизація.');
+    err.statusCode = 401;
+    err.isOperational = true;
+    throw err;
+  }
+
+  const enrollment = await Enrollment.findOne({
+    where: { userId: requester.id, courseId: course.id },
+  });
+  if (!enrollment) {
+    const err = new Error('Ви не записані на цей курс.');
+    err.statusCode = 403;
+    err.isOperational = true;
+    throw err;
+  }
+
+  const attemptsUsed = await Result.count({ where: { userId: requester.id, testId: test.id } });
+  const serialized = serializeTestForStudent(test, attemptsUsed);
+  // Додаємо courseId з теми, щоб фронтенд міг побудувати посилання "назад до курсу"
+  return { ...serialized, courseId: course.id };
+};
+
+// ─────────────────────────────────────────────────────────────
 // CREATE TEST FOR TOPIC
 // ─────────────────────────────────────────────────────────────
 
@@ -606,6 +676,7 @@ const createTestForTopic = async (teacherId, topicId, data) => {
 module.exports = {
   getTestByCourse,
   getTestByLesson,
+  getTestByTopic,
   createTest,
   createTestForLesson,
   createTestForTopic,
