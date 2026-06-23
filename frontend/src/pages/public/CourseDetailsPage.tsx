@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { BookOpen, Lock, FileText, PlayCircle, FileQuestion, Pencil, Eye, CheckCircle2 } from "lucide-react";
+import {
+  BookOpen, Lock, FileText, PlayCircle, FileQuestion,
+  Pencil, Eye, CheckCircle2, ChevronDown, ChevronRight,
+} from "lucide-react";
 import { coursesApi } from "../../api/courses";
 import { lessonsApi } from "../../api/lessons";
 import { testsApi } from "../../api/tests";
+import { topicsApi } from "../../api/topics";
 import { ApiError } from "../../api/client";
-import type { Course, CourseBlock, TestSummary } from "../../types";
+import type { Course, CourseBlock, TestSummary, Topic } from "../../types";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import { Spinner, Badge, EmptyState } from "../../components/ui";
@@ -22,14 +26,55 @@ export function CourseDetailsPage() {
 
   const [course, setCourse] = useState<Course | null>(null);
   const [blocks, setBlocks] = useState<CourseBlock[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
   const [legacyTestMeta, setLegacyTestMeta] = useState<TestSummary | null>(null);
   const [hasAccess, setHasAccess] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEnrolling, setIsEnrolling] = useState(false);
+  // Які теми розкриті (за замовчуванням — усі)
+  const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
 
   const isOwner = user && course && (user.id === course.teacherId || user.role === "admin");
   const isAdmin = user?.role === "admin";
+
+  const loadCourseData = async (courseId: string) => {
+    const courseData = await coursesApi.getById(courseId);
+    setCourse(courseData);
+
+    let accessGranted = false;
+    try {
+      const blocksData = await lessonsApi.getBlocks(courseId);
+      setBlocks(blocksData);
+      accessGranted = true;
+      setHasAccess(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        setHasAccess(false);
+      } else if (!(err instanceof ApiError && err.status === 401)) {
+        throw err;
+      }
+    }
+
+    // Завантажуємо теми (доступні для власника та enrolled студентів)
+    if (accessGranted || (user && (user.id === courseData.teacherId || user.role === "admin"))) {
+      try {
+        const topicsData = await topicsApi.listByCourse(courseId);
+        setTopics(topicsData);
+        // Розкриваємо всі теми за замовчуванням
+        setExpandedTopics(new Set(topicsData.map((t) => t.id)));
+      } catch {
+        // теми недоступні — нічого страшного
+      }
+    }
+
+    try {
+      const meta = await testsApi.getResultsMeta(courseId);
+      setLegacyTestMeta(meta);
+    } catch {
+      // тесту може не існувати
+    }
+  };
 
   useEffect(() => {
     if (!id) return;
@@ -37,43 +82,11 @@ export function CourseDetailsPage() {
     setIsLoading(true);
     setError(null);
 
-    async function load() {
-      try {
-        const courseData = await coursesApi.getById(id!);
-        if (cancelled) return;
-        setCourse(courseData);
+    loadCourseData(id)
+      .catch((err) => { if (!cancelled) setError(getErrorMessage(err)); })
+      .finally(() => { if (!cancelled) setIsLoading(false); });
 
-        try {
-          const blocksData = await lessonsApi.getBlocks(id!);
-          if (cancelled) return;
-          setBlocks(blocksData);
-          setHasAccess(true);
-        } catch (err) {
-          if (err instanceof ApiError && err.status === 403) {
-            setHasAccess(false);
-          } else if (!(err instanceof ApiError && err.status === 401)) {
-            throw err;
-          }
-        }
-
-        // Legacy курсовий тест (один на весь курс) — окремо від блокових тестів.
-        try {
-          const meta = await testsApi.getResultsMeta(id!);
-          if (!cancelled) setLegacyTestMeta(meta);
-        } catch {
-          // тесту може не існувати — це нормально
-        }
-      } catch (err) {
-        if (!cancelled) setError(getErrorMessage(err));
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id]);
 
   async function handleEnroll() {
@@ -86,9 +99,7 @@ export function CourseDetailsPage() {
     try {
       await coursesApi.enroll(id);
       notify("Ви записались на курс!", "success");
-      const blocksData = await lessonsApi.getBlocks(id);
-      setBlocks(blocksData);
-      setHasAccess(true);
+      await loadCourseData(id);
     } catch (err) {
       if (err instanceof ApiError && err.code === "ALREADY_ENROLLED") {
         notify("Ви вже записані на цей курс.", "info");
@@ -101,6 +112,14 @@ export function CourseDetailsPage() {
     }
   }
 
+  function toggleTopic(topicId: string) {
+    setExpandedTopics((prev) => {
+      const next = new Set(prev);
+      next.has(topicId) ? next.delete(topicId) : next.add(topicId);
+      return next;
+    });
+  }
+
   if (isLoading) return <Spinner label="Завантажуємо курс…" />;
   if (error || !course)
     return (
@@ -110,7 +129,22 @@ export function CourseDetailsPage() {
     );
 
   const isFree = !course.price || Number(course.price) === 0;
-  const sortedBlocks = blocks.slice().sort((a, b) => a.lesson.order - b.lesson.order);
+
+  // Уроки без теми (не прив'язані до жодної теми)
+  const topicLessonIds = new Set(topics.flatMap((t) => t.lessons.map((l) => l.id)));
+  const ungroupedBlocks = blocks
+    .filter((b) => !topicLessonIds.has(b.lesson.id))
+    .slice()
+    .sort((a, b) => a.lesson.order - b.lesson.order);
+
+  // Блоки по темах (для пошуку тесту блоку)
+  const blockByLessonId = new Map(blocks.map((b) => [b.lesson.id, b]));
+
+  const hasCurriculum = topics.length > 0 || blocks.length > 0;
+  // Перший доступний урок для кнопки "Продовжити"
+  const firstLesson = topics.length > 0
+    ? topics[0]?.lessons?.[0]
+    : blocks[0]?.lesson;
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
@@ -145,44 +179,134 @@ export function CourseDetailsPage() {
           )}
 
           <h2 className="mb-3 font-display text-xl text-ink">Програма курсу</h2>
+
           {!hasAccess && !isOwner && (
             <p className="mb-3 flex items-center gap-2 rounded-md bg-ink/5 px-3 py-2 text-sm text-slate">
               <Lock className="h-4 w-4" /> Запишіться на курс, щоб відкрити уроки
             </p>
           )}
-          {sortedBlocks.length === 0 ? (
+
+          {!hasCurriculum ? (
             <EmptyState title="Уроки ще не додані" description="Викладач поки не опублікував матеріали." />
           ) : (
-            <ol className="flex flex-col divide-y divide-line rounded-lg border border-line bg-paper-raised">
-              {sortedBlocks.map(({ lesson, test }, idx) => {
-                const Icon = LESSON_ICONS[lesson.type] ?? FileText;
+            <div className="flex flex-col gap-3">
+
+              {/* ── Теми з уроками ── */}
+              {topics.map((topic) => {
+                const isExpanded = expandedTopics.has(topic.id);
+                const sortedLessons = topic.lessons.slice().sort((a, b) => a.order - b.order);
+
                 return (
-                  <li key={lesson.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className="font-mono text-xs text-slate">{String(idx + 1).padStart(2, "0")}</span>
-                    {lesson.locked ? (
-                      <Lock className="h-4 w-4 text-slate/50" />
-                    ) : (
-                      <Icon className="h-4 w-4 text-slate" />
-                    )}
-                    <span className={`flex-1 text-sm ${lesson.locked ? "text-slate/60" : "text-ink"}`}>
-                      {lesson.title}
-                    </span>
-                    {test && (
-                      <span
-                        className="flex items-center gap-1 text-xs text-slate"
-                        title={`Тест блоку: ${test.title}`}
-                      >
-                        <FileQuestion className="h-3.5 w-3.5 text-gold-dark" />
-                        {test.passed && <CheckCircle2 className="h-3.5 w-3.5 text-teal-dark" />}
+                  <div key={topic.id} className="overflow-hidden rounded-lg border border-line bg-paper-raised">
+                    {/* Заголовок теми */}
+                    <button
+                      onClick={() => toggleTopic(topic.id)}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-ink/5 transition-colors"
+                    >
+                      {isExpanded
+                        ? <ChevronDown className="h-4 w-4 shrink-0 text-slate" />
+                        : <ChevronRight className="h-4 w-4 shrink-0 text-slate" />
+                      }
+                      <span className="flex-1 font-medium text-ink">{topic.title}</span>
+                      <span className="text-xs text-slate shrink-0">
+                        {sortedLessons.length} {sortedLessons.length === 1 ? "урок" : "уроків"}
+                        {topic.test ? " · тест" : ""}
                       </span>
+                    </button>
+
+                    {/* Уроки теми */}
+                    {isExpanded && (
+                      <ol className="flex flex-col divide-y divide-line border-t border-line">
+                        {sortedLessons.length === 0 ? (
+                          <li className="px-10 py-3 text-sm text-slate/60">Уроків ще немає</li>
+                        ) : (
+                          sortedLessons.map((lesson, idx) => {
+                            const Icon = LESSON_ICONS[lesson.type] ?? FileText;
+                            const block = blockByLessonId.get(lesson.id);
+                            return (
+                              <li key={lesson.id} className="flex items-center gap-3 px-4 py-3 pl-11">
+                                <span className="font-mono text-xs text-slate">
+                                  {String(idx + 1).padStart(2, "0")}
+                                </span>
+                                {lesson.locked ? (
+                                  <Lock className="h-4 w-4 text-slate/50" />
+                                ) : (
+                                  <Icon className="h-4 w-4 text-slate" />
+                                )}
+                                <span className={`flex-1 text-sm ${lesson.locked ? "text-slate/60" : "text-ink"}`}>
+                                  {lesson.title}
+                                </span>
+                                {block?.test && (
+                                  <span className="flex items-center gap-1 text-xs text-slate" title={`Тест: ${block.test.title}`}>
+                                    <FileQuestion className="h-3.5 w-3.5 text-gold-dark" />
+                                    {block.test.passed && <CheckCircle2 className="h-3.5 w-3.5 text-teal-dark" />}
+                                  </span>
+                                )}
+                                <Badge>{LESSON_TYPE_LABELS[lesson.type]}</Badge>
+                              </li>
+                            );
+                          })
+                        )}
+
+                        {/* Тест теми */}
+                        {topic.test && (
+                          <li className="flex items-center gap-3 border-t border-line bg-gold/5 px-4 py-3 pl-11">
+                            <FileQuestion className="h-4 w-4 text-gold-dark" />
+                            <div className="flex-1 text-sm">
+                              <span className="font-medium text-ink">{topic.test.title}</span>
+                              <span className="ml-2 text-xs text-slate">
+                                прохідний бал {topic.test.passingScore}%
+                              </span>
+                            </div>
+                            {hasAccess && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => navigate(`/topics/${topic.id}/test`)}
+                              >
+                                До тесту
+                              </Button>
+                            )}
+                          </li>
+                        )}
+                      </ol>
                     )}
-                    <Badge>{LESSON_TYPE_LABELS[lesson.type]}</Badge>
-                  </li>
+                  </div>
                 );
               })}
-            </ol>
+
+              {/* ── Уроки без теми (старий формат або не розподілені) ── */}
+              {ungroupedBlocks.length > 0 && (
+                <ol className="flex flex-col divide-y divide-line rounded-lg border border-line bg-paper-raised">
+                  {ungroupedBlocks.map(({ lesson, test }, idx) => {
+                    const Icon = LESSON_ICONS[lesson.type] ?? FileText;
+                    return (
+                      <li key={lesson.id} className="flex items-center gap-3 px-4 py-3">
+                        <span className="font-mono text-xs text-slate">{String(idx + 1).padStart(2, "0")}</span>
+                        {lesson.locked ? (
+                          <Lock className="h-4 w-4 text-slate/50" />
+                        ) : (
+                          <Icon className="h-4 w-4 text-slate" />
+                        )}
+                        <span className={`flex-1 text-sm ${lesson.locked ? "text-slate/60" : "text-ink"}`}>
+                          {lesson.title}
+                        </span>
+                        {test && (
+                          <span className="flex items-center gap-1 text-xs text-slate" title={`Тест: ${test.title}`}>
+                            <FileQuestion className="h-3.5 w-3.5 text-gold-dark" />
+                            {test.passed && <CheckCircle2 className="h-3.5 w-3.5 text-teal-dark" />}
+                          </span>
+                        )}
+                        <Badge>{LESSON_TYPE_LABELS[lesson.type]}</Badge>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+            </div>
           )}
 
+          {/* Legacy тест курсу */}
           {legacyTestMeta && (
             <div className="mt-6 flex items-center gap-3 rounded-lg border border-line bg-paper-raised px-4 py-3">
               <FileQuestion className="h-5 w-5 text-gold-dark" />
@@ -213,29 +337,21 @@ export function CourseDetailsPage() {
                 onClick={() => navigate(`/teacher/courses/${course.id}`)}
               >
                 {isAdmin ? (
-                  <>
-                    <Eye className="h-4 w-4" /> Переглянути курс
-                  </>
+                  <><Eye className="h-4 w-4" /> Переглянути курс</>
                 ) : (
-                  <>
-                    <Pencil className="h-4 w-4" /> Редагувати курс
-                  </>
+                  <><Pencil className="h-4 w-4" /> Редагувати курс</>
                 )}
               </Button>
             ) : hasAccess ? (
               <Button
                 className="mt-4 w-full"
-                onClick={() => sortedBlocks[0] && navigate(`/lessons/${sortedBlocks[0].lesson.id}`)}
-                disabled={sortedBlocks.length === 0}
+                onClick={() => firstLesson && navigate(`/lessons/${firstLesson.id}`)}
+                disabled={!firstLesson}
               >
                 Продовжити навчання
               </Button>
             ) : (
-              <Button
-                className="mt-4 w-full"
-                onClick={handleEnroll}
-                isLoading={isEnrolling}
-              >
+              <Button className="mt-4 w-full" onClick={handleEnroll} isLoading={isEnrolling}>
                 {isFree ? "Записатися безкоштовно" : "Записатися на курс"}
               </Button>
             )}

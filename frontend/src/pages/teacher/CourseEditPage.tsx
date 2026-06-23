@@ -12,9 +12,10 @@ import { formatPrice, getErrorMessage } from "../../utils/helpers";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
 import { LessonsManager } from "./LessonsManager";
+import { TopicsManager } from "./TopicsManager";
 import { TestManager } from "./TestManager";
 
-type Tab = "details" | "lessons" | "test";
+type Tab = "details" | "lessons" | "topics" | "test";
 
 export function CourseEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -111,7 +112,8 @@ export function CourseEditPage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: "details", label: "Деталі" },
     { key: "lessons", label: "Уроки" },
-    { key: "test", label: "Тест курсу (застарілий)" },
+    { key: "topics", label: "Теми" },
+    { key: "test", label: "Тест курсу" },
   ];
 
   return (
@@ -246,6 +248,8 @@ export function CourseEditPage() {
         )}
 
         {tab === "lessons" && <LessonsManager courseId={course.id} isReadOnly={isAdminView} />}
+        {tab === "topics" && <TopicsManager courseId={course.id} isReadOnly={isAdminView} />}
+
         {tab === "test" && (
           <div>
             <p className="mb-4 rounded-md bg-ink/5 px-3 py-2 text-xs text-slate">

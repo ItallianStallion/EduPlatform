@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Check, FileQuestion } from "lucide-react";
 import { lessonsApi } from "../../api/lessons";
+import { topicsApi } from "../../api/topics";
 import { progressApi } from "../../api/progress";
 import { testsApi } from "../../api/tests";
-import type { CourseProgress, Lesson, TestSummary } from "../../types";
+import type { CourseProgress, Lesson, TestSummary, Topic } from "../../types";
 import { ProgressThread } from "../../components/ProgressThread";
 import { Spinner, EmptyState, Card } from "../../components/ui";
 import { Button } from "../../components/Button";
@@ -22,6 +23,7 @@ export function LessonViewerPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMarking, setIsMarking] = useState(false);
+  const [topics, setTopics] = useState<Topic[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -40,6 +42,10 @@ export function LessonViewerPage() {
         testsApi
           .getResultsMeta(lessonData.courseId)
           .then((meta) => !cancelled && setTestMeta(meta))
+          .catch(() => undefined);
+        topicsApi
+          .listByCourse(lessonData.courseId)
+          .then((t) => !cancelled && setTopics(t))
           .catch(() => undefined);
       })
       .catch((err) => !cancelled && setError(getErrorMessage(err)))
@@ -86,6 +92,19 @@ export function LessonViewerPage() {
               Прогрес курсу: <span className="font-medium text-ink">{courseProgress.percentage}%</span>
             </p>
           )}
+          {topics.length > 0 && lesson && (() => {
+            const currentTopic = topics.find((t) => t.lessons.some((l) => l.id === lesson.id));
+            if (!currentTopic) return null;
+            return (
+              <div className="mb-3 rounded-md bg-gold/10 px-3 py-2">
+                <p className="text-xs font-medium text-gold-dark">Поточна тема</p>
+                <p className="mt-0.5 text-sm text-ink">{currentTopic.title}</p>
+                {currentTopic.description && (
+                  <p className="mt-0.5 text-xs text-slate">{currentTopic.description}</p>
+                )}
+              </div>
+            );
+          })()}
           <ProgressThread
             items={sortedLessons.map((l) => ({
               id: l.id,
