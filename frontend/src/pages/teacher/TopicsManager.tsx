@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
-  ChevronDown, ChevronRight, CheckCircle2, FileQuestion, Pencil,
+  ChevronDown, ChevronRight, FileQuestion, Pencil,
   Plus, Trash2, BookOpen, GripVertical
 } from "lucide-react";
 import { topicsApi } from "../../api/topics";
@@ -10,16 +10,12 @@ import type { Lesson, Topic } from "../../types";
 import { Spinner, EmptyState, Badge } from "../../components/ui";
 import { Button } from "../../components/Button";
 import { Modal, ConfirmDialog } from "../../components/Modal";
-import { TextField, TextAreaField } from "../../components/FormField";
+import { TextField, TextAreaField, SelectField } from "../../components/FormField";
 import { getErrorMessage, LESSON_TYPE_LABELS } from "../../utils/helpers";
 import { useToast } from "../../context/ToastContext";
 import { LessonTestModal } from "./LessonTestModal";
 
 // ─── TopicTestModal ───────────────────────────────────────────
-function blankQuestion(): import("../../types").TestQuestion {
-  return { question: "", options: ["", ""], correctIndex: 0 };
-}
-
 function TopicTestModal({
   topic,
   isOpen,
@@ -32,73 +28,30 @@ function TopicTestModal({
   isReadOnly: boolean;
 }) {
   const { notify } = useToast();
-  const [test, setTest] = useState(topic.test ?? null);
-  const [isCreating, setIsCreating] = useState(false);
+  const [test, setTest] = useState(topic.test);
+  const [form, setForm] = useState({
+    title: topic.test?.title ?? `Тест теми «${topic.title}»`,
+    passingScore: topic.test?.passingScore ?? 70,
+    maxAttempts: topic.test?.maxAttempts ?? ("" as number | ""),
+    questions: topic.test ? JSON.stringify(topic.test, null, 2) : "[]",
+  });
   const [isSaving, setIsSaving] = useState(false);
 
-  const [title, setTitle] = useState(`Тест теми «${topic.title}»`);
-  const [passingScore, setPassingScore] = useState(70);
-  const [maxAttempts, setMaxAttempts] = useState<number | "">("");
-  const [questions, setQuestions] = useState<import("../../types").TestQuestion[]>([blankQuestion()]);
-
-  // Reset state when modal opens
-  useEffect(() => {
-    if (!isOpen) return;
-    setTest(topic.test ?? null);
-    setIsCreating(false);
-    setTitle(`Тест теми «${topic.title}»`);
-    setPassingScore(70);
-    setMaxAttempts("");
-    setQuestions([blankQuestion()]);
-  }, [isOpen, topic]);
-
-  function updateQuestion(idx: number, patch: Partial<import("../../types").TestQuestion>) {
-    setQuestions((prev) => prev.map((q, i) => (i === idx ? { ...q, ...patch } : q)));
-  }
-
-  function updateOption(qIdx: number, optIdx: number, value: string) {
-    setQuestions((prev) =>
-      prev.map((q, i) =>
-        i === qIdx ? { ...q, options: q.options.map((o, j) => (j === optIdx ? value : o)) } : q,
-      ),
-    );
-  }
-
-  function addOption(qIdx: number) {
-    setQuestions((prev) => prev.map((q, i) => (i === qIdx ? { ...q, options: [...q.options, ""] } : q)));
-  }
-
-  function removeOption(qIdx: number, optIdx: number) {
-    setQuestions((prev) =>
-      prev.map((q, i) => {
-        if (i !== qIdx) return q;
-        const options = q.options.filter((_, j) => j !== optIdx);
-        const correctIndex = q.correctIndex && q.correctIndex >= options.length ? 0 : q.correctIndex;
-        return { ...q, options, correctIndex };
-      }),
-    );
-  }
-
-  function addQuestion() {
-    setQuestions((prev) => [...prev, blankQuestion()]);
-  }
-
-  function removeQuestion(idx: number) {
-    setQuestions((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  async function handleSubmit(e: FormEvent) {
+  async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setIsSaving(true);
     try {
+      let parsed: unknown[];
+      try { parsed = JSON.parse(form.questions); }
+      catch { notify("Невірний JSON питань", "error"); setIsSaving(false); return; }
+
       const created = await testsApi.createForTopic(topic.id, {
-        title,
-        questions,
-        passingScore,
-        maxAttempts: maxAttempts === "" ? null : maxAttempts,
+        title: form.title,
+        passingScore: form.passingScore,
+        maxAttempts: form.maxAttempts === "" ? null : Number(form.maxAttempts),
+        questions: parsed as never,
       });
       setTest(created as never);
-      setIsCreating(false);
       notify("Тест теми створено", "success");
       onClose();
     } catch (err) {
@@ -111,144 +64,56 @@ function TopicTestModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Тест теми «${topic.title}»`}>
       {test ? (
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="gold">Прохідний бал: {test.passingScore}%</Badge>
-            {test.maxAttempts && <Badge tone="coral">Макс. спроб: {test.maxAttempts}</Badge>}
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-slate">Тест вже існує для цієї теми.</p>
+          <div className="rounded-md border border-line bg-paper-raised p-3 text-sm">
+            <p className="font-medium text-ink">{test.title}</p>
+            <p className="mt-1 text-xs text-slate">
+              Прохідний бал: {test.passingScore}% ·{" "}
+              {test.maxAttempts ? `Спроб: ${test.maxAttempts}` : "Необмежено спроб"}
+            </p>
           </div>
-          <div className="mt-4 flex flex-col gap-3">
-            {test.questions.map((q: import("../../types").TestQuestion, idx: number) => (
-              <div key={idx} className="rounded-lg border border-line bg-paper-raised p-4">
-                <p className="font-medium text-ink">
-                  {idx + 1}. {q.question}
-                </p>
-                <ul className="mt-2 flex flex-col gap-1">
-                  {q.options.map((opt: string, optIdx: number) => (
-                    <li
-                      key={optIdx}
-                      className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${
-                        optIdx === q.correctIndex ? "bg-teal/10 text-teal-dark" : "text-ink/80"
-                      }`}
-                    >
-                      {optIdx === q.correctIndex && <CheckCircle2 className="h-3.5 w-3.5" />}
-                      {opt}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+          <Button variant="ghost" onClick={onClose}>Закрити</Button>
         </div>
       ) : isReadOnly ? (
         <p className="text-sm text-slate">Тест не додано.</p>
-      ) : !isCreating ? (
-        <EmptyState
-          title="Тест ще не створено"
-          description="Додайте тест для цієї теми — він відкриється студенту після завершення уроків теми."
-          action={
-            <Button onClick={() => setIsCreating(true)}>
-              <Plus className="h-4 w-4" /> Створити тест
-            </Button>
-          }
-        />
       ) : (
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <form onSubmit={handleCreate} className="flex flex-col gap-4">
+          <p className="rounded-md bg-ink/5 px-3 py-2 text-xs text-slate">
+            Питання вводяться як JSON-масив:{" "}
+            <code className="text-ink">[{"{"}"question":"...","options":["A","B"],"correctIndex":0{"}"}]</code>
+          </p>
+          <TextField
+            label="Назва тесту"
+            required
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+          />
           <div className="grid grid-cols-2 gap-3">
-            <TextField label="Назва тесту" required value={title} onChange={(e) => setTitle(e.target.value)} />
             <TextField
               label="Прохідний бал (%)"
               type="number"
               min={0}
               max={100}
-              value={passingScore}
-              onChange={(e) => setPassingScore(Number(e.target.value))}
+              value={form.passingScore}
+              onChange={(e) => setForm({ ...form, passingScore: Number(e.target.value) })}
+            />
+            <TextField
+              label="Макс. спроб"
+              type="number"
+              min={1}
+              placeholder="∞"
+              value={form.maxAttempts}
+              onChange={(e) => setForm({ ...form, maxAttempts: e.target.value === "" ? "" : Number(e.target.value) })}
             />
           </div>
-          <TextField
-            label="Макс. спроб"
-            type="number"
-            min={1}
-            placeholder="∞"
-            value={maxAttempts}
-            onChange={(e) => setMaxAttempts(e.target.value === "" ? "" : Number(e.target.value))}
+          <TextAreaField
+            label="Питання (JSON)"
+            rows={8}
+            value={form.questions}
+            onChange={(e) => setForm({ ...form, questions: e.target.value })}
           />
-
-          {questions.map((q, qIdx) => (
-            <div key={qIdx} className="rounded-lg border border-line bg-paper-raised p-4">
-              <div className="flex items-start gap-2">
-                <div className="flex-1">
-                  <TextField
-                    label={`Питання ${qIdx + 1}`}
-                    required
-                    value={q.question}
-                    onChange={(e) => updateQuestion(qIdx, { question: e.target.value })}
-                  />
-                </div>
-                {questions.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeQuestion(qIdx)}
-                    className="mt-7 rounded p-2 text-coral-dark hover:bg-coral/5"
-                    aria-label="Видалити питання"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="mt-3 flex flex-col gap-2">
-                {q.options.map((opt, optIdx) => (
-                  <div key={optIdx} className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name={`correct-topic-${qIdx}`}
-                      checked={q.correctIndex === optIdx}
-                      onChange={() => updateQuestion(qIdx, { correctIndex: optIdx })}
-                      title="Правильна відповідь"
-                      className="accent-teal"
-                    />
-                    <input
-                      required
-                      value={opt}
-                      onChange={(e) => updateOption(qIdx, optIdx, e.target.value)}
-                      placeholder={`Варіант ${optIdx + 1}`}
-                      className="flex-1 rounded-md border border-line bg-paper-raised px-3 py-2 text-sm focus:border-gold-dark focus:outline-none focus:ring-1 focus:ring-gold-dark"
-                    />
-                    {q.options.length > 2 && (
-                      <button
-                        type="button"
-                        onClick={() => removeOption(qIdx, optIdx)}
-                        className="rounded p-1.5 text-slate hover:bg-ink/5"
-                        aria-label="Видалити варіант"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => addOption(qIdx)}
-                  className="mt-1 self-start text-xs font-medium text-gold-dark hover:underline"
-                >
-                  + варіант відповіді
-                </button>
-              </div>
-            </div>
-          ))}
-
-          <Button type="button" variant="ghost" onClick={addQuestion} className="self-start">
-            <Plus className="h-4 w-4" /> Додати питання
-          </Button>
-
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="ghost" onClick={() => setIsCreating(false)}>
-              Скасувати
-            </Button>
-            <Button type="submit" isLoading={isSaving} className="flex-1">
-              Зберегти тест
-            </Button>
-          </div>
+          <Button type="submit" isLoading={isSaving}>Створити тест теми</Button>
         </form>
       )}
     </Modal>
