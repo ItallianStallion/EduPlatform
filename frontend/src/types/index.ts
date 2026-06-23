@@ -116,6 +116,7 @@ export interface Test {
   id: string;
   courseId: string | null;
   lessonId?: string | null;
+  topicId?: string | null;
   title: string;
   questions: TestQuestion[];
   passingScore: number;

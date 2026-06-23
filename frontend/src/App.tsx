@@ -88,6 +88,14 @@ export default function App() {
                   </RequireAuth>
                 }
               />
+              <Route
+                path="/topics/:topicId/test"
+                element={
+                  <RequireAuth>
+                    <TestPage />
+                  </RequireAuth>
+                }
+              />
             </Route>
 
             {/* Кабінет студента */}
