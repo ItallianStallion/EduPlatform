@@ -76,7 +76,8 @@ const categoryRoutes = require('./routes/category.routes');
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/courses', courseRoutes);
 app.use('/api/v1/admin', adminRoutes);
-app.use('/api/v1/categories', categoryRoutes); 
+app.use('/api/v1/categories', categoryRoutes);
+app.use('/api/v1/topics', require('./routes/Topic.routes')); 
 
 // --- Маршрути (Dev #2) ---
 app.use('/api/v1/profiles',   profileRoutes);

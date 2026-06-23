@@ -17,6 +17,7 @@ const Lesson = require('./Lesson');
 const Progress = require('./Progress');
 const Test = require('./Test');
 const Result = require('./Result');
+const Topic = require('./Topic');
 
 // --- User ↔ Course (викладач є автором багатьох курсів) ---
 User.hasMany(Course, {
@@ -100,6 +101,18 @@ Result.belongsTo(User, { foreignKey: 'userId', as: 'student' });
 Test.hasMany(Result, { foreignKey: 'testId', as: 'results', onDelete: 'CASCADE' });
 Result.belongsTo(Test, { foreignKey: 'testId', as: 'test' });
 
+// --- Topic: курс має багато тем ---
+Course.hasMany(Topic, { foreignKey: 'courseId', as: 'topics', onDelete: 'CASCADE' });
+Topic.belongsTo(Course, { foreignKey: 'courseId', as: 'course' });
+
+// --- Topic ↔ Lesson ---
+Topic.hasMany(Lesson, { foreignKey: 'topicId', as: 'lessons', onDelete: 'SET NULL' });
+Lesson.belongsTo(Topic, { foreignKey: 'topicId', as: 'topic' });
+
+// --- Topic ↔ Test (один тест на тему) ---
+Topic.hasOne(Test, { foreignKey: 'topicId', allowNull: true, as: 'test', onDelete: 'CASCADE' });
+Test.belongsTo(Topic, { foreignKey: { name: 'topicId', allowNull: true }, as: 'topic' });
+
 module.exports = {
   User,
   Category,
@@ -110,4 +123,5 @@ module.exports = {
   Progress,
   Test,
   Result,
+  Topic,
 };

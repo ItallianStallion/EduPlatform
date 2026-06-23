@@ -8,6 +8,13 @@ export interface TestCreatePayload {
   maxAttempts?: number | null;
 }
 
+export interface TopicTestCreatePayload {
+  title: string;
+  questions: TestQuestion[];
+  passingScore?: number;
+  maxAttempts?: number | null;
+}
+
 export interface TestUpdatePayload {
   passingScore?: number;
   maxAttempts?: number | null;
@@ -49,6 +56,11 @@ export const testsApi = {
   // ── Спільні для обох типів: оперують testId, не курсом/уроком ──
   update: async (testId: string, payload: TestUpdatePayload): Promise<Test> => {
     const res = await apiClient.patch(`/tests/${testId}`, payload);
+    return res.data.data.test ?? res.data.data;
+  },
+
+  createForTopic: async (topicId: string, payload: TopicTestCreatePayload): Promise<Test> => {
+    const res = await apiClient.post(`/tests/topic/${topicId}`, payload);
     return res.data.data.test ?? res.data.data;
   },
 

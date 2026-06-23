@@ -10,7 +10,7 @@
 
 'use strict';
 
-const { Test, Course, Enrollment, Result, Lesson, Progress } = require('../models');
+const { Test, Course, Enrollment, Result, Lesson, Progress, Topic } = require('../models');
 
 // ─────────────────────────────────────────────────────────────
 // ДОПОМІЖНІ ФУНКЦІЇ
@@ -559,11 +559,56 @@ const getUserTestResultsByLesson = async (userId, lessonId) => {
   return getResultsForTest(userId, test);
 };
 
+
+// ─────────────────────────────────────────────────────────────
+// CREATE TEST FOR TOPIC
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Створює тест для теми курсу.
+ * Тема може мати лише один тест.
+ *
+ * @param {string} teacherId
+ * @param {string} topicId
+ * @param {object} data - { title, questions, passingScore?, maxAttempts? }
+ */
+const createTestForTopic = async (teacherId, topicId, data) => {
+  const topic = await Topic.findByPk(topicId);
+
+  if (!topic) {
+    const err = new Error('Тему не знайдено.');
+    err.statusCode = 404; err.isOperational = true; throw err;
+  }
+
+  const course = await Course.findByPk(topic.courseId);
+  if (!course || course.teacherId !== teacherId) {
+    const err = new Error('Ви не є власником цього курсу.');
+    err.statusCode = 403; err.isOperational = true; throw err;
+  }
+
+  const existing = await Test.findOne({ where: { topicId } });
+  if (existing) {
+    const err = new Error('Тест для цієї теми вже існує. Використайте редагування.');
+    err.statusCode = 409; err.isOperational = true; throw err;
+  }
+
+  return Test.create({
+    topicId,
+    courseId: null,
+    lessonId: null,
+    title: data.title,
+    questions: data.questions,
+    passingScore: data.passingScore || 70,
+    maxAttempts: data.maxAttempts || null,
+  });
+};
+
 module.exports = {
   getTestByCourse,
   getTestByLesson,
   createTest,
   createTestForLesson,
+  createTestForTopic,
   updateTest,
   submitTest,
   getUserTestResults,

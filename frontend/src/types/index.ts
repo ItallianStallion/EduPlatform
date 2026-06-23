@@ -87,6 +87,25 @@ export interface Lesson {
   completed?: boolean;
 }
 
+
+export interface TopicTest {
+  id: string;
+  title: string;
+  passingScore: number;
+  maxAttempts: number | null;
+}
+
+export interface Topic {
+  id: string;
+  courseId: string;
+  title: string;
+  description: string | null;
+  order: number;
+  lessons: (Lesson & { locked?: boolean })[];
+  test: TopicTest | null;
+  createdAt?: string;
+}
+
 export interface TestQuestion {
   question: string;
   options: string[];

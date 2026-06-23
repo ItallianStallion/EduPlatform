@@ -138,4 +138,35 @@ router.patch(
   testController.updateTest,
 );
 
+
+/**
+ * POST /api/v1/tests/topic/:topicId
+ * Створення тесту для теми курсу.
+ */
+router.post(
+  '/topic/:topicId',
+  authenticate,
+  checkRole('teacher'),
+  [
+    body('title').notEmpty().isString(),
+    body('questions').isArray({ min: 1 }),
+    body('passingScore').optional().isInt({ min: 0, max: 100 }),
+    body('maxAttempts').optional({ nullable: true }).isInt({ min: 1 }),
+  ],
+  async (req, res, next) => {
+    const { validationResult } = require('express-validator');
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, errors: errors.array() });
+    }
+    try {
+      const { createTestForTopic } = require('../services/test.service');
+      const test = await createTestForTopic(req.user.id, req.params.topicId, req.body);
+      return res.status(201).json({ success: true, message: 'Тест теми створено.', data: { test } });
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
 module.exports = router;
