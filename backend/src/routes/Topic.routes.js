@@ -3,9 +3,9 @@
 'use strict';
 
 const express = require('express');
-const { body, param } = require('express-validator');
+const { body} = require('express-validator');
 const { authenticate } = require('../middleware/auth');
-const checkRole = require('../middleware/checkRole');
+const { checkRole } = require('../middleware/checkRole');
 const ctrl = require('../controllers/Topic.controller');
 
 const router = express.Router();
