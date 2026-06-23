@@ -374,7 +374,10 @@ const updateTest = async (testId, teacherId, updates) => {
  */
 const submitTest = async (userId, testId, answers) => {
   const test = await Test.findByPk(testId, {
-    include: [{ model: Lesson, as: 'lesson' }],
+    include: [
+      { model: Lesson, as: 'lesson' },
+      { model: Topic, as: 'topic' },
+    ],
   });
 
   if (!test) {
@@ -384,7 +387,7 @@ const submitTest = async (userId, testId, answers) => {
     throw err;
   }
 
-  const courseId = test.courseId || test.lesson?.courseId;
+  const courseId = test.courseId || test.lesson?.courseId || test.topic?.courseId;
 
   const enrollment = await Enrollment.findOne({
     where: { userId, courseId },
