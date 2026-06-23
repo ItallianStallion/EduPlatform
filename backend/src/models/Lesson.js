@@ -43,12 +43,7 @@ const Lesson = sequelize.define(
       allowNull: true,
       comment: 'URL PDF-файлу (S3/R2)',
     },
-    // topicId — опціональний, якщо урок входить до теми
-    topicId: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      defaultValue: null,
-    },
+    // topicId визначається через associations у models/index.js (Lesson.belongsTo Topic)
     // Порядок уроків у курсі (або в темі якщо topicId є)
     order: {
       type: DataTypes.INTEGER,
