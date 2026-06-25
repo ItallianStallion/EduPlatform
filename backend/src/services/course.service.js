@@ -96,6 +96,7 @@ const getCourses = async ({
       include: [
         // Додаємо кількість студентів для сортування та відображення
         [fn('COUNT', col('enrollments.id')), 'enrollmentCount'],
+        [fn('COUNT', col('lessons.id')), 'lessonsCount'],
       ],
     },
     include: [
@@ -103,6 +104,12 @@ const getCourses = async ({
         model: Enrollment,
         as: 'enrollments',
         attributes: [], // Не вибираємо поля enrollment, лише COUNT
+        required: false,
+      },
+      {
+        model: Lesson,
+        as: 'lessons',
+        attributes: [],
         required: false,
       },
       {
