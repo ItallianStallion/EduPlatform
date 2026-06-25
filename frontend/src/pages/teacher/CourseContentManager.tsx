@@ -5,7 +5,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import {
-  ChevronDown, ChevronRight, CheckCircle2, FileQuestion, Pencil, Plus, Trash2,
+  ChevronDown, ChevronRight, FileQuestion, Pencil, Plus, Trash2,
   BookOpen, GripVertical, FileText, PlayCircle,
 } from "lucide-react";
 import { topicsApi } from "../../api/topics";
@@ -40,26 +40,27 @@ function TopicTestModal({ topic, isOpen, onClose, isReadOnly }: {
   const [test, setTest] = useState(topic.test ?? null);
   const [mode, setMode] = useState<TopicTestMode>("view");
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingEdit, setIsLoadingEdit] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const [title, setTitle] = useState(topic.test?.title ?? `Тест теми «${topic.title}»`);
   const [passingScore, setPassingScore] = useState(topic.test?.passingScore ?? 70);
   const [maxAttempts, setMaxAttempts] = useState<number | "">(topic.test?.maxAttempts ?? "");
-  const [questions, setQuestions] = useState<TestQuestion[]>(
-    topic.test?.questions?.map((q: TestQuestion) => ({ ...q, options: [...q.options] })) ?? [blankQuestion()]
-  );
+  const [questions, setQuestions] = useState<TestQuestion[]>([blankQuestion()]);
 
-  function enterEdit() {
+  async function enterEdit() {
     if (!test) return;
-    setTitle((test as { title?: string }).title ?? "");
-    setPassingScore((test as { passingScore?: number }).passingScore ?? 70);
-    setMaxAttempts((test as { maxAttempts?: number | null }).maxAttempts ?? "");
-    setQuestions(
-      ((test as { questions?: TestQuestion[] }).questions ?? [blankQuestion()])
-        .map((q: TestQuestion) => ({ ...q, options: [...q.options] }))
-    );
-    setMode("edit");
+    setIsLoadingEdit(true);
+    try {
+      const full = await testsApi.getByTopic(topic.id);
+      setTitle(full.title ?? "");
+      setPassingScore(full.passingScore ?? 70);
+      setMaxAttempts(full.maxAttempts ?? "");
+      setQuestions((full.questions ?? [blankQuestion()]).map((q: TestQuestion) => ({ ...q, options: [...q.options] })));
+      setMode("edit");
+    } catch (err) { notify(getErrorMessage(err), "error"); }
+    finally { setIsLoadingEdit(false); }
   }
 
   function updateQuestion(idx: number, patch: Partial<TestQuestion>) {
@@ -205,14 +206,14 @@ function TopicTestModal({ topic, isOpen, onClose, isReadOnly }: {
       ) : test ? (
         <div className="flex flex-col gap-4">
           <div className="rounded-xl border border-teal/20 bg-teal/5 p-4">
-            <p className="font-semibold text-ink">{(test as { title?: string }).title}</p>
+            <p className="font-semibold text-ink">{test.title}</p>
             <p className="mt-1 text-sm text-slate">
-              Прохідний бал: {(test as { passingScore?: number }).passingScore}% · {(test as { maxAttempts?: number | null }).maxAttempts ? `Спроб: ${(test as { maxAttempts?: number }).maxAttempts}` : "Необмежено"}
+              Прохідний бал: {test.passingScore}% · {test.maxAttempts ? `Спроб: ${test.maxAttempts}` : "Необмежено"}
             </p>
           </div>
           {!isReadOnly && (
             <div className="flex gap-2">
-              <Button variant="ghost" className="flex-1" onClick={enterEdit}>
+              <Button variant="ghost" className="flex-1" onClick={enterEdit} isLoading={isLoadingEdit}>
                 <Pencil className="h-4 w-4" /> Редагувати
               </Button>
               <Button variant="ghost" className="flex-1 text-coral-dark hover:bg-coral/8" onClick={() => setConfirmDelete(true)}>
