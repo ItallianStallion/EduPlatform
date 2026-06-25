@@ -123,7 +123,11 @@ export function LessonsManager({ courseId, isReadOnly = false }: { courseId: str
         videoUrl: form.type === "video" ? form.videoUrl : null,
         pdfUrl:   form.type === "pdf"   ? form.pdfUrl   : null,
       };
-      editing ? await lessonsApi.update(editing.id, p) : await lessonsApi.create(courseId, p);
+      if (editing) {
+        await lessonsApi.update(editing.id, p);
+      } else {
+        await lessonsApi.create(courseId, p);
+      }
       notify(editing ? "Урок оновлено" : "Урок додано", "success");
       setModalOpen(false); reload();
     } catch (err) { notify(getErrorMessage(err), "error"); }
