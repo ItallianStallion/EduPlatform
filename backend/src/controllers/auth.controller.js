@@ -15,6 +15,13 @@ const COOKIE_OPTIONS_BASE = {
   httpOnly: true,
   secure: IS_SECURE,
   sameSite: IS_SECURE ? 'none' : 'lax',
+  // ВАЖЛИВО: явно фіксуємо path '/'. Без цього Express бере як default
+  // шлях поточного роуту (наприклад '/api/v1/auth/login' для логіну і
+  // '/api/v1/auth/refresh' для рефрешу), і браузер починає зберігати
+  // ДВІ окремі cookie з однаковим іменем 'refreshToken', але різним path.
+  // У запиті на /auth/refresh браузер тоді шле обидві, і сервер може
+  // прочитати застарілу — звідси хибний 401 "не відповідає збереженому".
+  path: '/',
 };
 
 /**
