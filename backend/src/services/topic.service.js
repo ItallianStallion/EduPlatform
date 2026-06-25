@@ -42,8 +42,8 @@ const assertEnrolled = async (courseId, userId) => {
 
 /**
  * Повертає всі теми курсу з уроками і тестами.
- * Студент — тільки для enrolled курсів.
- * Викладач/адмін — завжди.
+ * Власник-викладач і admin — завжди.
+ * Студент і викладач-не-власник — лише для курсів, на які вони записані (Enrollment).
  */
 const getTopicsByCourse = async (courseId, requester) => {
   const course = await Course.findByPk(courseId);
@@ -52,11 +52,13 @@ const getTopicsByCourse = async (courseId, requester) => {
     err.statusCode = 404; err.isOperational = true; throw err;
   }
 
-  if (requester.role === 'student') {
+  const isOwnerOrAdmin = requester.role === 'admin'
+    || (requester.role === 'teacher' && course.teacherId === requester.id);
+
+  // Студент і викладач-не-власник — на однакових умовах: потрібен запис (Enrollment).
+  // Узгоджено з lesson.service.js (assertCourseAccess).
+  if (!isOwnerOrAdmin) {
     await assertEnrolled(courseId, requester.id);
-  } else if (requester.role === 'teacher' && course.teacherId !== requester.id) {
-    const err = new Error('Ви не є власником цього курсу.');
-    err.statusCode = 403; err.isOperational = true; throw err;
   }
 
   const topics = await Topic.findAll({
