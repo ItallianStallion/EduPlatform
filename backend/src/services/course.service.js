@@ -95,7 +95,8 @@ const getCourses = async ({
     attributes: {
       include: [
         // Додаємо кількість студентів для сортування та відображення
-        [fn('COUNT', col('enrollments.id')), 'enrollmentCount'],
+        [fn('COUNT', literal('DISTINCT "enrollments"."id"')), 'enrollmentCount'],
+        [fn('COUNT', literal('DISTINCT "lessons"."id"')), 'lessonsCount'],
       ],
     },
     include: [
@@ -103,6 +104,12 @@ const getCourses = async ({
         model: Enrollment,
         as: 'enrollments',
         attributes: [], // Не вибираємо поля enrollment, лише COUNT
+        required: false,
+      },
+      {
+        model: Lesson,
+        as: 'lessons',
+        attributes: [],
         required: false,
       },
       {
@@ -351,6 +358,34 @@ const createCourse = async (teacherId, data) => {
 };
 
 /**
+ * Видаляє курс. Дозволено лише власнику курсу.
+ *
+ * @param {string} courseId
+ * @param {string} teacherId - ID викладача, що робить запит
+ */
+const deleteCourse = async (courseId, teacherId) => {
+  const course = await Course.findByPk(courseId);
+
+  if (!course) {
+    const err = new Error('Курс не знайдено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  // Перевірка власності: тільки автор курсу може видалити
+  if (course.teacherId !== teacherId) {
+    const err = new Error('Ви не можете видалити курс, який вам не належить.');
+    err.statusCode = 403;
+    err.isOperational = true;
+    throw err;
+  }
+
+  await course.destroy();
+  await invalidateCoursesCache();
+};
+
+/**
  * Редагує курс. Дозволено лише власнику курсу.
  *
  * @param {string} courseId
@@ -472,7 +507,7 @@ const getMyCourses = async (teacherId) => {
       },
     ],
     attributes: {
-      include: [[fn('COUNT', col('enrollments.id')), 'enrollmentCount']],
+      include: [[fn('COUNT', literal('DISTINCT "enrollments"."id"')), 'enrollmentCount']],
     },
     group: ['Course.id', 'category.id'],
     order: [['createdAt', 'DESC']],
@@ -498,7 +533,7 @@ const getCourseById = async (courseId, requester = null) => {
       { model: Enrollment, as: 'enrollments', attributes: [] },
     ],
     attributes: {
-      include: [[fn('COUNT', col('enrollments.id')), 'enrollmentCount']],
+      include: [[fn('COUNT', literal('DISTINCT "enrollments"."id"')), 'enrollmentCount']],
     },
     group: ['Course.id', 'teacher.id', 'category.id'],
     subQuery: false,
@@ -530,6 +565,7 @@ module.exports = {
   enrollInCourse,
   createCourse,
   updateCourse,
+  deleteCourse,
   setCourseStatus,
   getMyCourses,
   getCourseById,

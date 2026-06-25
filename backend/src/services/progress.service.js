@@ -11,7 +11,7 @@
 'use strict';
 
 const { Op } = require('sequelize');
-const { Course, Lesson, Progress, Enrollment, Category, Test, Result } = require('../models');
+const { Course, Lesson, Progress, Enrollment, Category, Test, Result, Topic } = require('../models');
 
 // Вага уроку і його тесту в межах одного блоку.
 // Якщо в блоці немає тесту — урок важить 100% блоку.
@@ -219,26 +219,54 @@ const buildCourseBlocksProgress = async (userId, courseId) => {
   const totalLessons = lessons.length;
   const allLessonsDone = totalLessons > 0 && completedLessonsCount === totalLessons;
 
+  // ── Тести тем (Test.topicId) — рахуються як додаткові блоки ──
+  const topicTests = await Test.findAll({
+    where: {},
+    include: [{ model: Topic, as: 'topic', attributes: ['id', 'courseId'], where: { courseId }, required: true }],
+    attributes: ['id', 'passingScore'],
+  });
+
+  let topicTestsEarned = 0;
+  let allTopicTestsPassed = true;
+
+  if (topicTests.length > 0) {
+    const topicTestIds = topicTests.map((t) => t.id);
+    const topicResults = await Result.findAll({
+      where: { userId, testId: topicTestIds },
+      attributes: ['testId', 'passed'],
+    });
+    const topicResultsByTestId = {};
+    topicResults.forEach((r) => {
+      if (!topicResultsByTestId[r.testId]) topicResultsByTestId[r.testId] = [];
+      topicResultsByTestId[r.testId].push(r);
+    });
+
+    topicTests.forEach((tt) => {
+      const results = topicResultsByTestId[tt.id] || [];
+      const passed = results.some((r) => r.passed);
+      if (passed) topicTestsEarned += 100;
+      else allTopicTestsPassed = false;
+    });
+  }
+
   // ── Legacy курсовий тест (Test.courseId) — рахується як додатковий блок ──
   const legacyTest = await getTestStatus(userId, courseId);
 
   let percentage;
-  if (blockWeightSum > 0) {
-    // Є хоча б один блок (урок) — рахуємо середній % по блоках,
-    // а курсовий тест (якщо є) додаємо як ще один блок у те саме середнє.
-    if (legacyTest.hasTest) {
-      const totalUnits = blocks.length + 1;
-      const legacyEarned = legacyTest.passed ? 100 : 0;
-      percentage = Math.round((blockWeightEarned + legacyEarned) / totalUnits);
-    } else {
-      percentage = Math.round(blockWeightEarned / blocks.length);
-    }
+  const totalUnits = blocks.length + topicTests.length + (legacyTest.hasTest ? 1 : 0);
+
+  if (totalUnits > 0) {
+    const legacyEarned = legacyTest.hasTest ? (legacyTest.passed ? 100 : 0) : 0;
+    percentage = Math.round((blockWeightEarned + topicTestsEarned + legacyEarned) / totalUnits);
   } else {
-    // Немає жодного уроку — лишається тільки курсовий тест (або нічого)
-    percentage = legacyTest.hasTest ? (legacyTest.passed ? 100 : 0) : 0;
+    percentage = 0;
   }
 
-  const isCompleted = allLessonsDone && allBlocksDone && (!legacyTest.hasTest || legacyTest.passed);
+  const isCompleted =
+    allLessonsDone &&
+    allBlocksDone &&
+    (topicTests.length === 0 || allTopicTestsPassed) &&
+    (!legacyTest.hasTest || legacyTest.passed);
 
   return {
     blocks,

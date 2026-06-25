@@ -137,4 +137,16 @@ router.post(
   courseController.enrollInCourse,
 );
 
+/**
+ * DELETE /api/v1/courses/:id
+ * Видалення курсу. Тільки власник-викладач.
+ */
+router.delete(
+  '/:id',
+  authenticate,
+  checkRole('teacher'),
+  [param('id').isUUID(4).withMessage('Невірний формат ID курсу')],
+  courseController.deleteCourse,
+);
+
 module.exports = router;

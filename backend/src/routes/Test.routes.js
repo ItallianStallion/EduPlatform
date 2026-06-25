@@ -4,8 +4,9 @@
 'use strict';
 
 const { Router } = require('express');
-const { body, param } = require('express-validator');
+const { body, param, validationResult } = require('express-validator');
 const testController = require('../controllers/Test.controller');
+const testService = require('../services/test.service');
 const { authenticate } = require('../middleware/auth');
 const { checkRole } = require('../middleware/checkRole');
 
@@ -141,22 +142,41 @@ router.patch(
 
 /**
  * GET /api/v1/tests/topic/:topicId
- * Тест теми (без правильних відповідей для студента).
+ * Деталі тесту теми.
+ * Викладач/адмін — з питаннями та правильними відповідями.
+ * Студент — без правильних відповідей, лише якщо записаний на курс.
  */
 router.get(
   '/topic/:topicId',
   authenticate,
   [param('topicId').isUUID(4).withMessage('Невірний формат ID теми')],
+  testController.getTestByTopic,
+);
+
+/**
+ * POST /api/v1/tests/topic/:topicId
+ * Створення тесту для теми курсу. Тільки викладач-власник.
+ * Body: { title, questions: [{ question, options, correctIndex }], passingScore?, maxAttempts? }
+ */
+router.post(
+  '/topic/:topicId',
+  authenticate,
+  checkRole('teacher'),
+  [
+    param('topicId').isUUID(4).withMessage('Невірний формат ID теми'),
+    body('title').trim().notEmpty().withMessage("Назва тесту обов'язкова"),
+    body('questions').isArray({ min: 1 }).withMessage('Потрібно хоча б одне питання'),
+    body('passingScore').optional().isInt({ min: 0, max: 100 }),
+    body('maxAttempts').optional({ nullable: true }).isInt({ min: 1 }),
+  ],
   async (req, res, next) => {
-    const { validationResult } = require('express-validator');
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(422).json({ success: false, errors: errors.array() });
     }
     try {
-      const { getTestByTopic } = require('../services/test.service');
-      const test = await getTestByTopic(req.params.topicId, req.user);
-      return res.json({ success: true, data: { test } });
+      const test = await testService.createTestForTopic(req.user.id, req.params.topicId, req.body);
+      return res.status(201).json({ success: true, message: 'Тест теми створено.', data: { test } });
     } catch (err) {
       return next(err);
     }
@@ -164,33 +184,22 @@ router.get(
 );
 
 /**
- * POST /api/v1/tests/topic/:topicId
- * Створення тесту для теми курсу.
+ * PATCH /api/v1/tests/topic/:topicId
+ * Редагування тесту теми. Тільки викладач-власник курсу.
+ * Body: { title?, questions?, passingScore?, maxAttempts? }
  */
-router.post(
+router.patch(
   '/topic/:topicId',
   authenticate,
   checkRole('teacher'),
   [
-    body('title').notEmpty().isString(),
-    body('questions').isArray({ min: 1 }),
+    param('topicId').isUUID(4).withMessage('Невірний формат ID теми'),
+    body('title').optional().trim().isString().isLength({ min: 1, max: 255 }),
+    body('questions').optional().isArray({ min: 1 }).withMessage('Потрібно хоча б одне питання'),
     body('passingScore').optional().isInt({ min: 0, max: 100 }),
     body('maxAttempts').optional({ nullable: true }).isInt({ min: 1 }),
   ],
-  async (req, res, next) => {
-    const { validationResult } = require('express-validator');
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(422).json({ success: false, errors: errors.array() });
-    }
-    try {
-      const { createTestForTopic } = require('../services/test.service');
-      const test = await createTestForTopic(req.user.id, req.params.topicId, req.body);
-      return res.status(201).json({ success: true, message: 'Тест теми створено.', data: { test } });
-    } catch (err) {
-      return next(err);
-    }
-  },
+  testController.updateTopicTest,
 );
 
 module.exports = router;

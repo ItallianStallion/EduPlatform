@@ -10,11 +10,18 @@ const authService = require('../services/auth.service');
 // Константи для налаштування cookies
 // sameSite: 'none' потрібен коли фронтенд і бекенд на різних доменах (cross-origin).
 // Вимагає secure: true, тому в production завжди https.
-const IS_PROD = process.env.NODE_ENV === 'production';
+const IS_SECURE = process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
 const COOKIE_OPTIONS_BASE = {
   httpOnly: true,
-  secure: IS_PROD,
-  sameSite: IS_PROD ? 'none' : 'strict',
+  secure: IS_SECURE,
+  sameSite: IS_SECURE ? 'none' : 'lax',
+  // ВАЖЛИВО: явно фіксуємо path '/'. Без цього Express бере як default
+  // шлях поточного роуту (наприклад '/api/v1/auth/login' для логіну і
+  // '/api/v1/auth/refresh' для рефрешу), і браузер починає зберігати
+  // ДВІ окремі cookie з однаковим іменем 'refreshToken', але різним path.
+  // У запиті на /auth/refresh браузер тоді шле обидві, і сервер може
+  // прочитати застарілу — звідси хибний 401 "не відповідає збереженому".
+  path: '/',
 };
 
 /**
@@ -40,7 +47,6 @@ const login = async (req, res, next) => {
     res.cookie('refreshToken', refreshToken, {
       ...COOKIE_OPTIONS_BASE,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 днів
-      path: '/api/v1/auth/refresh', // Refresh-токен надсилається лише на цей endpoint
     });
 
     return res.status(200).json({
@@ -74,7 +80,6 @@ const refresh = async (req, res, next) => {
     res.cookie('refreshToken', newRefreshToken, {
       ...COOKIE_OPTIONS_BASE,
       maxAge: 7 * 24 * 60 * 60 * 1000,
-      path: '/api/v1/auth/refresh',
     });
 
     return res.status(200).json({ success: true, message: 'Токен оновлено' });
@@ -96,7 +101,7 @@ const logout = async (req, res, next) => {
 
     // Очищуємо cookies
     res.clearCookie('accessToken', COOKIE_OPTIONS_BASE);
-    res.clearCookie('refreshToken', { ...COOKIE_OPTIONS_BASE, path: '/api/v1/auth/refresh' });
+    res.clearCookie('refreshToken', COOKIE_OPTIONS_BASE);
 
     return res.status(200).json({ success: true, message: 'Вихід успішний' });
   } catch (err) {

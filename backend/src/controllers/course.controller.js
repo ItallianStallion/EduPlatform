@@ -212,11 +212,34 @@ const getCourseById = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/v1/courses/:id
+ * Видалення курсу. Тільки власник-викладач.
+ */
+const deleteCourse = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, errors: errors.array() });
+    }
+
+    await courseService.deleteCourse(req.params.id, req.user.id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Курс видалено.',
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   getCourses,
   enrollInCourse,
   createCourse,
   updateCourse,
+  deleteCourse,
   publishCourse,
   unpublishCourse,
   getMyCourses,
