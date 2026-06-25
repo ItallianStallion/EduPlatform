@@ -328,6 +328,7 @@ const updateTest = async (testId, teacherId, updates) => {
     include: [
       { model: Course, as: 'course' },
       { model: Lesson, as: 'lesson', include: [{ model: Course, as: 'course' }] },
+      { model: Topic, as: 'topic', include: [{ model: Course, as: 'course' }] },
     ],
   });
 
@@ -338,7 +339,7 @@ const updateTest = async (testId, teacherId, updates) => {
     throw err;
   }
 
-  const ownerCourse = test.course || test.lesson?.course;
+  const ownerCourse = test.course || test.lesson?.course || test.topic?.course;
   if (!ownerCourse || ownerCourse.teacherId !== teacherId) {
     const err = new Error('Ви не є власником цього тесту.');
     err.statusCode = 403;
@@ -676,6 +677,52 @@ const createTestForTopic = async (teacherId, topicId, data) => {
   });
 };
 
+// ─────────────────────────────────────────────────────────────
+// UPDATE TEST FOR TOPIC
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Оновлює тест теми.
+ * Перевіряє, що запитувач є власником курсу, якому належить тема.
+ *
+ * @param {string} topicId
+ * @param {string} teacherId
+ * @param {object} updates - { title?, questions?, passingScore?, maxAttempts? }
+ */
+const updateTopicTest = async (topicId, teacherId, updates) => {
+  const topic = await Topic.findByPk(topicId, {
+    include: [{ model: Course, as: 'course' }],
+  });
+
+  if (!topic) {
+    const err = new Error('Тему не знайдено.');
+    err.statusCode = 404; err.isOperational = true; throw err;
+  }
+
+  const { course } = topic;
+  if (!course || course.teacherId !== teacherId) {
+    const err = new Error('Ви не є власником цього курсу.');
+    err.statusCode = 403; err.isOperational = true; throw err;
+  }
+
+  const test = await Test.findOne({ where: { topicId } });
+  if (!test) {
+    const err = new Error('Тест для цієї теми ще не створено.');
+    err.statusCode = 404; err.isOperational = true; throw err;
+  }
+
+  const allowedFields = ['title', 'questions', 'passingScore', 'maxAttempts'];
+  const safeUpdates = {};
+  allowedFields.forEach((field) => {
+    if (updates[field] !== undefined) {
+      safeUpdates[field] = field === 'maxAttempts' ? updates[field] || null : updates[field];
+    }
+  });
+
+  await test.update(safeUpdates);
+  return test;
+};
+
 module.exports = {
   getTestByCourse,
   getTestByLesson,
@@ -684,6 +731,7 @@ module.exports = {
   createTestForLesson,
   createTestForTopic,
   updateTest,
+  updateTopicTest,
   submitTest,
   getUserTestResults,
   getUserTestResultsByLesson,

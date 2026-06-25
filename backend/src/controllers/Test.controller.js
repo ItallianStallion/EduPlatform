@@ -152,12 +152,57 @@ const getUserTestResultsByLesson = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/v1/tests/topic/:topicId
+ * Повертає деталі тесту теми.
+ * Викладач/адмін — з правильними відповідями.
+ * Студент — без правильних відповідей.
+ */
+const getTestByTopic = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, errors: errors.array() });
+    }
+
+    const test = await testService.getTestByTopic(req.params.topicId, req.user || null);
+    return res.status(200).json({ success: true, data: { test } });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * PATCH /api/v1/tests/topic/:topicId
+ * Редагування тесту теми. Тільки власник курсу.
+ * Body: { title?, questions?, passingScore?, maxAttempts? }
+ */
+const updateTopicTest = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(422).json({ success: false, errors: errors.array() });
+    }
+
+    const test = await testService.updateTopicTest(req.params.topicId, req.user.id, req.body);
+    return res.status(200).json({
+      success: true,
+      message: 'Тест теми оновлено.',
+      data: { test },
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   getTestByCourse,
   getTestByLesson,
+  getTestByTopic,
   createTest,
   createTestForLesson,
   updateTest,
+  updateTopicTest,
   submitTest,
   getUserTestResults,
   getUserTestResultsByLesson,
