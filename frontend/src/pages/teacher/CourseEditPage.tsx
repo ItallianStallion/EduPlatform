@@ -66,7 +66,7 @@ export function CourseEditPage() {
       const updated = await coursesApi.update(id, {
         title: form.title,
         description: form.description || undefined,
-        categoryId: form.categoryId || null,
+        categoryId: form.categoryId || undefined,
         price: Number(form.price) || 0,
         coverImage: form.coverImage || null,
         accessMode: form.accessMode,
