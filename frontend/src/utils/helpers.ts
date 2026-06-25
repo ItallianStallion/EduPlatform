@@ -6,6 +6,18 @@ export function formatPrice(price: string | number): string {
   return `${value.toFixed(0)} ₴`;
 }
 
+/**
+ * Форматує грошовий БАЛАНС користувача (на відміну від formatPrice,
+ * призначеної для ціни курсу). 0 ₴ балансу — це просто 0 ₴, а не
+ * "Безкоштовно": викладач, що ще нічого не заробив, має бачити "0 ₴",
+ * а не напис, що натякає на безкоштовний курс.
+ */
+export function formatBalance(balance: string | number): string {
+  const value = typeof balance === "string" ? parseFloat(balance) : balance;
+  const safeValue = Number.isFinite(value) ? value : 0;
+  return `${safeValue.toFixed(0)} ₴`;
+}
+
 export function formatDate(date: string | null | undefined): string {
   if (!date) return "—";
   return new Date(date).toLocaleDateString("uk-UA", {

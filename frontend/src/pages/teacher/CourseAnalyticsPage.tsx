@@ -4,7 +4,7 @@ import { Users, TrendingUp, Percent, Layers } from "lucide-react";
 import { analyticsApi } from "../../api/analytics";
 import type { CourseAnalytics, CourseStudent } from "../../types";
 import { Spinner, EmptyState, Card } from "../../components/ui";
-import { formatDate, formatPrice, getErrorMessage } from "../../utils/helpers";
+import { formatBalance, formatDate, getErrorMessage } from "../../utils/helpers";
 
 export function CourseAnalyticsPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,7 +33,7 @@ export function CourseAnalyticsPage() {
       value: `${analytics.blocks.total}${analytics.blocks.withTest ? ` · з тестом: ${analytics.blocks.withTest}` : ""}`,
       icon: Layers,
     },
-    { label: "Дохід", value: formatPrice(analytics.revenue.teacherNet), icon: TrendingUp },
+    { label: "Дохід", value: formatBalance(analytics.revenue.teacherNet), icon: TrendingUp },
   ];
 
   return (

@@ -59,11 +59,6 @@ export const testsApi = {
     return res.data.data.test ?? res.data.data;
   },
 
-  getByTopic: async (topicId: string): Promise<Test> => {
-    const res = await apiClient.get(`/tests/topic/${topicId}`);
-    return res.data.data.test ?? res.data.data;
-  },
-
   createForTopic: async (topicId: string, payload: TopicTestCreatePayload): Promise<Test> => {
     const res = await apiClient.post(`/tests/topic/${topicId}`, payload);
     return res.data.data.test ?? res.data.data;

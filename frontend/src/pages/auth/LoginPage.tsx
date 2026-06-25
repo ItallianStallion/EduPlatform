@@ -38,44 +38,52 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-57px)] items-center justify-center px-4 py-12">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-2 text-center">
-          <BookOpen className="h-7 w-7 text-gold-dark" />
-          <h1 className="font-display text-2xl text-ink">З поверненням</h1>
-          <p className="text-sm text-slate">Увійдіть, щоб продовжити навчання чи викладання</p>
+    <div className="flex min-h-[calc(100vh-57px)] items-center justify-center bg-paper-sunken px-4 py-12">
+      <div className="w-full max-w-[420px]">
+        {/* Logo */}
+        <div className="mb-8 flex flex-col items-center gap-3 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ink shadow-md">
+            <BookOpen className="h-6 w-6 text-gold" />
+          </div>
+          <div>
+            <h1 className="font-display text-2xl font-semibold text-ink">З поверненням</h1>
+            <p className="mt-1 text-sm text-slate">Увійдіть, щоб продовжити навчання</p>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <TextField
-            label="Email"
-            type="email"
-            name="email"
-            autoComplete="email"
-            required
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
-          <TextField
-            label="Пароль"
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            required
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-          />
-          {error && (
-            <p className="rounded-md bg-coral/10 px-3 py-2 text-sm text-coral-dark">{error}</p>
-          )}
-          <Button type="submit" isLoading={isLoading} className="w-full">
-            Увійти
-          </Button>
-        </form>
+        {/* Card */}
+        <div className="rounded-2xl border border-line bg-paper-raised px-8 py-8 shadow-md">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <TextField
+              label="Email"
+              type="email"
+              name="email"
+              autoComplete="email"
+              required
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+            <TextField
+              label="Пароль"
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              required
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+            />
+            {error && (
+              <p className="rounded-lg bg-coral/10 px-3.5 py-2.5 text-sm text-coral-dark">{error}</p>
+            )}
+            <Button type="submit" isLoading={isLoading} className="w-full mt-1">
+              Увійти
+            </Button>
+          </form>
+        </div>
 
-        <p className="mt-6 text-center text-sm text-slate">
-          Немає акаунту?{" "}
-          <Link to="/register" className="font-medium text-gold-dark hover:underline">
+        <p className="mt-5 text-center text-sm text-slate">
+          Ще немає акаунту?{" "}
+          <Link to="/register" className="font-semibold text-gold-dark hover:underline underline-offset-2">
             Зареєструватися
           </Link>
         </p>

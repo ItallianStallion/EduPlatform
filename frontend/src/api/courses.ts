@@ -66,4 +66,8 @@ export const coursesApi = {
     const res = await apiClient.post(`/courses/${id}/enroll`);
     return res.data.data;
   },
+
+  remove: async (id: string): Promise<void> => {
+    await apiClient.delete(`/courses/${id}`);
+  },
 };

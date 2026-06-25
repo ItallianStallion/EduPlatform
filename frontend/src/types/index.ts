@@ -72,6 +72,7 @@ export interface Course {
   category?: Category | null;
   studentsCount?: number;
   lessonsCount?: number;
+  enrollmentCount?: string | number;
   isEnrolled?: boolean;
 }
 
@@ -116,7 +117,6 @@ export interface Test {
   id: string;
   courseId: string | null;
   lessonId?: string | null;
-  topicId?: string | null;
   title: string;
   questions: TestQuestion[];
   passingScore: number;

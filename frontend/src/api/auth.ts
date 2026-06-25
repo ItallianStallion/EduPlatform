@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, refreshAccessToken } from "./client";
 import type { User, UserRole } from "../types";
 
 export interface RegisterPayload {
@@ -30,6 +30,9 @@ export const authApi = {
   },
 
   refresh: async (): Promise<void> => {
-    await apiClient.post("/auth/refresh");
+    // Делегуємо спільному дедуплікованому механізму з client.ts, щоб
+    // не запускати другий незалежний /auth/refresh паралельно з тим,
+    // що вже міг стартувати інтерцептор apiClient.
+    await refreshAccessToken();
   },
 };

@@ -53,9 +53,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authApi
       .refresh()
       .then(() => setUserState(cached))
-      .catch(() => {
-        setUserState(null);
-        writeCachedUser(null);
+      .catch((err) => {
+        // Скидаємо сесію ЛИШЕ якщо сервер явно відповів 401/403.
+        // Мережева помилка (status=0), таймаут або 5xx — лишаємо кешованого
+        // користувача, щоб звичайне оновлення сторінки не розлогінювало.
+        const isAuthError = err instanceof ApiError && (err.status === 401 || err.status === 403);
+        if (isAuthError) {
+          setUserState(null);
+          writeCachedUser(null);
+        } else {
+          setUserState(cached);
+        }
       })
       .finally(() => setIsLoading(false));
   }, []);

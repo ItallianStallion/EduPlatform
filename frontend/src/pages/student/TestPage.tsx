@@ -10,7 +10,7 @@ import { getErrorMessage } from "../../utils/helpers";
 import { useToast } from "../../context/ToastContext";
 
 export function TestPage() {
-  const { courseId, lessonId, topicId } = useParams<{ courseId?: string; lessonId?: string; topicId?: string }>();
+  const { courseId, lessonId } = useParams<{ courseId?: string; lessonId?: string }>();
   const navigate = useNavigate();
   const { notify } = useToast();
 
@@ -22,29 +22,17 @@ export function TestPage() {
   const [error, setError] = useState<string | null>(null);
   const [needsLessonFinished, setNeedsLessonFinished] = useState(false);
 
-  const [topicCourseId, setTopicCourseId] = useState<string | null>(null);
-  const backTarget = lessonId
-    ? `/lessons/${lessonId}`
-    : topicId
-      ? `/courses/${topicCourseId ?? ""}`
-      : `/courses/${courseId}`;
+  const backTarget = lessonId ? `/lessons/${lessonId}` : `/courses/${courseId}`;
   const backLabel = lessonId ? "До уроку" : "До курсу";
 
   useEffect(() => {
-    if (!courseId && !lessonId && !topicId) return;
+    if (!courseId && !lessonId) return;
     setIsLoading(true);
     setError(null);
     setNeedsLessonFinished(false);
-    const request = lessonId
-      ? testsApi.getByLesson(lessonId)
-      : topicId
-        ? testsApi.getByTopic(topicId)
-        : testsApi.getByCourse(courseId!);
+    const request = lessonId ? testsApi.getByLesson(lessonId) : testsApi.getByCourse(courseId!);
     request
-      .then((t) => {
-        setTest(t);
-        if (topicId && t.courseId) setTopicCourseId(t.courseId);
-      })
+      .then(setTest)
       .catch((err) => {
         if (err instanceof ApiError && err.code === "LESSON_NOT_FINISHED") {
           setNeedsLessonFinished(true);

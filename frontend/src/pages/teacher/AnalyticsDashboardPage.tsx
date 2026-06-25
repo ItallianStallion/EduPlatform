@@ -4,7 +4,7 @@ import { Users, Wallet, TrendingUp, BookOpen } from "lucide-react";
 import { analyticsApi } from "../../api/analytics";
 import type { AnalyticsDashboard } from "../../types";
 import { Spinner, EmptyState, Card, Badge } from "../../components/ui";
-import { formatPrice, getErrorMessage } from "../../utils/helpers";
+import { formatBalance, getErrorMessage } from "../../utils/helpers";
 
 export function AnalyticsDashboardPage() {
   const [data, setData] = useState<AnalyticsDashboard | null>(null);
@@ -22,8 +22,8 @@ export function AnalyticsDashboardPage() {
 
   const stats = [
     { label: "Студентів усього", value: data.summary.totalStudents, icon: Users },
-    { label: "Дохід усього", value: formatPrice(data.summary.totalRevenue), icon: TrendingUp },
-    { label: "Баланс", value: formatPrice(data.summary.teacherBalance), icon: Wallet },
+    { label: "Дохід усього", value: formatBalance(data.summary.totalRevenue), icon: TrendingUp },
+    { label: "Баланс", value: formatBalance(data.summary.teacherBalance), icon: Wallet },
     { label: "Курсів", value: data.summary.totalCourses, icon: BookOpen },
   ];
 
@@ -72,7 +72,7 @@ export function AnalyticsDashboardPage() {
                     </Badge>
                   </td>
                   <td className="px-4 py-3 font-mono">{c.students}</td>
-                  <td className="px-4 py-3 font-mono">{formatPrice(c.revenue.teacherNet)}</td>
+                  <td className="px-4 py-3 font-mono">{formatBalance(c.revenue.teacherNet)}</td>
                 </tr>
               ))}
             </tbody>

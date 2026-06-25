@@ -6,7 +6,7 @@ import { useToast } from "../../context/ToastContext";
 import { Spinner, Card } from "../../components/ui";
 import { TextField, TextAreaField } from "../../components/FormField";
 import { Button } from "../../components/Button";
-import { formatPrice, getErrorMessage, initials, ROLE_LABELS } from "../../utils/helpers";
+import { formatBalance, getErrorMessage, initials, ROLE_LABELS } from "../../utils/helpers";
 
 export function ProfilePage() {
   const { user } = useAuth();
@@ -68,7 +68,7 @@ export function ProfilePage() {
         {user.role === "teacher" && (
           <div className="ml-auto text-right">
             <p className="text-xs text-slate">Баланс</p>
-            <p className="font-mono text-lg font-semibold text-teal-dark">{formatPrice(user.balance)}</p>
+            <p className="font-mono text-lg font-semibold text-teal-dark">{formatBalance(user.balance)}</p>
           </div>
         )}
       </Card>

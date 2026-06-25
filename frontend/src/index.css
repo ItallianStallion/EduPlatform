@@ -1,62 +1,165 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
-  /* --- Color tokens: "ledger" palette --- */
-  --color-ink: #14213d;
-  --color-ink-light: #2a3a63;
-  --color-paper: #fbf8f2;
+  --color-ink:          #14213d;
+  --color-ink-light:    #2a3a63;
+  --color-ink-muted:    #3d4e6e;
+  --color-paper:        #fbf8f2;
   --color-paper-raised: #ffffff;
-  --color-gold: #e3a33e;
-  --color-gold-dark: #c4842a;
-  --color-teal: #2f7b6e;
-  --color-teal-dark: #225a51;
-  --color-coral: #d9624b;
-  --color-coral-dark: #b94c38;
-  --color-slate: #6b7280;
-  --color-line: #e5e0d5;
+  --color-paper-sunken: #f3ede3;
+  --color-gold:         #e3a33e;
+  --color-gold-light:   #f5d48a;
+  --color-gold-dark:    #c4842a;
+  --color-teal:         #2f7b6e;
+  --color-teal-light:   #d0ede8;
+  --color-teal-dark:    #225a51;
+  --color-coral:        #d9624b;
+  --color-coral-light:  #fde8e3;
+  --color-coral-dark:   #b94c38;
+  --color-slate:        #6b7280;
+  --color-slate-light:  #9ca3af;
+  --color-line:         #e5e0d5;
+  --color-line-strong:  #cec7b8;
 
-  --font-display: "Fraunces", serif;
-  --font-body: "Inter", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", monospace;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body:    "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono:    "IBM Plex Mono", "Fira Code", monospace;
+
+  --shadow-xs: 0 1px 2px 0 rgb(20 33 61 / 0.05);
+  --shadow-sm: 0 2px 4px 0 rgb(20 33 61 / 0.06), 0 1px 2px -1px rgb(20 33 61 / 0.04);
+  --shadow-md: 0 4px 12px 0 rgb(20 33 61 / 0.08), 0 2px 4px -2px rgb(20 33 61 / 0.05);
+  --shadow-lg: 0 10px 24px 0 rgb(20 33 61 / 0.10), 0 4px 8px -4px rgb(20 33 61 / 0.06);
+  --shadow-xl: 0 20px 48px 0 rgb(20 33 61 / 0.13), 0 8px 16px -8px rgb(20 33 61 / 0.08);
 }
 
 @layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
   html {
     font-family: var(--font-body);
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
   }
+
   body {
     background-color: var(--color-paper);
     color: var(--color-ink);
+    line-height: 1.6;
+    min-height: 100dvh;
   }
+
   ::selection {
-    background-color: var(--color-gold);
+    background-color: var(--color-gold-light);
     color: var(--color-ink);
   }
+
   :focus-visible {
     outline: 2px solid var(--color-gold-dark);
-    outline-offset: 2px;
+    outline-offset: 3px;
+    border-radius: 4px;
   }
+
+  h1, h2, h3, h4 { line-height: 1.25; letter-spacing: -0.01em; }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-slate-light); }
 }
 
 @layer components {
-  .font-display {
-    font-family: var(--font-display);
-  }
-  .font-mono {
-    font-family: var(--font-mono);
-  }
+  .font-display { font-family: var(--font-display); }
+  .font-mono    { font-family: var(--font-mono); }
 
-  /* Stitched thread divider — the signature motif: a dashed binding
-     thread connecting lesson "beads" in the course/lesson viewer. */
+  /* Signature dashed thread motif */
   .thread-line {
     background-image: repeating-linear-gradient(
       to bottom,
-      var(--color-line) 0,
-      var(--color-line) 6px,
-      transparent 6px,
-      transparent 12px
+      var(--color-line) 0, var(--color-line) 5px,
+      transparent 5px, transparent 11px
     );
     width: 2px;
   }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--color-line) 25%,
+      var(--color-paper-sunken) 50%,
+      var(--color-line) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s ease-in-out infinite;
+    border-radius: 6px;
+  }
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Card base */
+  .card {
+    background: var(--color-paper-raised);
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    box-shadow: var(--shadow-xs);
+  }
+  .card-hover {
+    transition: box-shadow 200ms ease, transform 200ms ease, border-color 200ms ease;
+  }
+  .card-hover:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--color-line-strong);
+    transform: translateY(-1px);
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 5px;
+    border-radius: 99px;
+    background: var(--color-line);
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 99px;
+    transition: width 600ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* DnD */
+  .drag-handle {
+    cursor: grab;
+    touch-action: none;
+    color: var(--color-slate-light);
+    transition: color 150ms ease;
+  }
+  .drag-handle:hover { color: var(--color-slate); }
+  .drag-handle:active { cursor: grabbing; }
+
+  .dnd-dragging {
+    box-shadow: var(--shadow-xl) !important;
+    opacity: 0.97;
+    transform: scale(1.015) rotate(0.6deg);
+  }
+
+  /* Sidebar link */
+  .sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-ink-muted);
+    transition: background 150ms ease, color 150ms ease;
+    text-decoration: none;
+  }
+  .sidebar-link:hover { background: rgb(20 33 61 / 0.05); color: var(--color-ink); }
+  .sidebar-link.active { background: var(--color-ink); color: var(--color-paper); }
 }

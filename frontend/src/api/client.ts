@@ -31,16 +31,32 @@ export class ApiError extends Error {
   }
 }
 
-// --- Авто-оновлення access-токена при 401 TOKEN_EXPIRED ---
-// Кілька паралельних запитів не повинні викликати /refresh кожен окремо —
-// чекаємо одного спільного промісу.
+// --- Авто-оновлення access-токена при 401 ---
+// ЄДИНА точка входу для рефрешу в усьому застосунку: і інтерцептор нижче,
+// і AuthContext (перевірка сесії при старті) повинні викликати САМЕ цю
+// функцію, а не ходити на /auth/refresh напряму через apiClient/authApi.
+// Інакше два незалежні refresh-запити можуть полетіти одночасно з тим самим
+// ще-валідним cookie-токеном: перший його ротує на бекенді, другий
+// долітає вже зі застарілим токеном і отримує 401 → користувача розлогінює,
+// хоча сесія насправді жива.
 let refreshPromise: Promise<void> | null = null;
 
-async function refreshAccessToken(): Promise<void> {
+export async function refreshAccessToken(): Promise<void> {
   if (!refreshPromise) {
     refreshPromise = axios
       .post(`${BASE_URL}/auth/refresh`, {}, { withCredentials: true })
       .then(() => undefined)
+      .catch((err: AxiosError<{ message?: string; errors?: string[]; code?: string }>) => {
+        // Нормалізуємо помилку до ApiError, щоб усі викликачі (AuthContext,
+        // інтерцептор нижче) могли однаково перевірити err.status — цей
+        // запит іде напряму через axios, а не через apiClient, тому
+        // звичайний інтерцептор apiClient тут не застосовується.
+        const status = err.response?.status ?? 0;
+        const message = err.response?.data?.message ?? err.message ?? "Сталася помилка";
+        const errors = err.response?.data?.errors ?? [];
+        const code = err.response?.data?.code;
+        throw new ApiError(message, status, errors, code);
+      })
       .finally(() => {
         refreshPromise = null;
       });

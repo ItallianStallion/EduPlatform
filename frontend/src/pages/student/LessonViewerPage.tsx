@@ -96,26 +96,13 @@ export function LessonViewerPage() {
             const currentTopic = topics.find((t) => t.lessons.some((l) => l.id === lesson.id));
             if (!currentTopic) return null;
             return (
-              <>
-                <div className="mb-3 rounded-md bg-gold/10 px-3 py-2">
-                  <p className="text-xs font-medium text-gold-dark">Поточна тема</p>
-                  <p className="mt-0.5 text-sm text-ink">{currentTopic.title}</p>
-                  {currentTopic.description && (
-                    <p className="mt-0.5 text-xs text-slate">{currentTopic.description}</p>
-                  )}
-                </div>
-                {currentTopic.test && (
-                  <button
-                    onClick={() => navigate(`/topics/${currentTopic.id}/test`)}
-                    className="mb-3 flex w-full items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-left text-sm text-ink hover:bg-ink/5"
-                  >
-                    <span className="flex items-center gap-2">
-                      <FileQuestion className="h-4 w-4 text-gold-dark" /> Тест теми
-                    </span>
-                    {currentTopic.test && <Check className="h-4 w-4 text-slate/40" />}
-                  </button>
+              <div className="mb-3 rounded-md bg-gold/10 px-3 py-2">
+                <p className="text-xs font-medium text-gold-dark">Поточна тема</p>
+                <p className="mt-0.5 text-sm text-ink">{currentTopic.title}</p>
+                {currentTopic.description && (
+                  <p className="mt-0.5 text-xs text-slate">{currentTopic.description}</p>
                 )}
-              </>
+              </div>
             );
           })()}
           <ProgressThread

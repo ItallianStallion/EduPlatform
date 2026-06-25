@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ExternalLink, Eye, EyeOff } from "lucide-react";
+import { ExternalLink, Eye, EyeOff, Trash2 } from "lucide-react";
 import { coursesApi } from "../../api/courses";
 import { categoriesApi } from "../../api/categories";
 import { adminApi } from "../../api/admin";
@@ -8,14 +8,14 @@ import type { Category, Course } from "../../types";
 import { Spinner, EmptyState, Badge } from "../../components/ui";
 import { Button } from "../../components/Button";
 import { TextField, TextAreaField, SelectField } from "../../components/FormField";
+import { Modal, ConfirmDialog } from "../../components/Modal";
 import { formatPrice, getErrorMessage } from "../../utils/helpers";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
-import { LessonsManager } from "./LessonsManager";
-import { TopicsManager } from "./TopicsManager";
+import { CourseContentManager } from "./CourseContentManager";
 import { TestManager } from "./TestManager";
 
-type Tab = "details" | "lessons" | "topics" | "test";
+type Tab = "details" | "content" | "test";
 
 export function CourseEditPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +34,8 @@ export function CourseEditPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -92,6 +94,21 @@ export function CourseEditPage() {
     }
   }
 
+  async function handleDeleteCourse() {
+    if (!course) return;
+    setIsDeleting(true);
+    try {
+      await coursesApi.remove(course.id);
+      notify("Курс видалено", "success");
+      navigate("/teacher");
+    } catch (err) {
+      notify(getErrorMessage(err), "error");
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteOpen(false);
+    }
+  }
+
   async function handleAdminUnpublish() {
     if (!course) return;
     setIsToggling(true);
@@ -111,8 +128,7 @@ export function CourseEditPage() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "details", label: "Деталі" },
-    { key: "lessons", label: "Уроки" },
-    { key: "topics", label: "Теми" },
+    { key: "content", label: "Зміст курсу" },
     { key: "test", label: "Тест курсу" },
   ];
 
@@ -140,21 +156,22 @@ export function CourseEditPage() {
             </Button>
           )
         ) : (
-          <Button
-            variant={course.status === "draft" ? "teal" : "ghost"}
-            onClick={handleTogglePublish}
-            isLoading={isToggling}
-          >
-            {course.status === "draft" ? (
-              <>
-                <Eye className="h-4 w-4" /> Опублікувати
-              </>
-            ) : (
-              <>
-                <EyeOff className="h-4 w-4" /> Зняти з публікації
-              </>
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={course.status === "draft" ? "teal" : "ghost"}
+              onClick={handleTogglePublish}
+              isLoading={isToggling}
+            >
+              {course.status === "draft" ? (
+                <><Eye className="h-4 w-4" /> Опублікувати</>
+              ) : (
+                <><EyeOff className="h-4 w-4" /> Зняти з публікації</>
+              )}
+            </Button>
+            <Button variant="danger" onClick={() => setIsDeleteOpen(true)}>
+              <Trash2 className="h-4 w-4" /> Видалити курс
+            </Button>
+          </div>
         )}
       </div>
 
@@ -247,20 +264,23 @@ export function CourseEditPage() {
           )
         )}
 
-        {tab === "lessons" && <LessonsManager courseId={course.id} isReadOnly={isAdminView} />}
-        {tab === "topics" && <TopicsManager courseId={course.id} isReadOnly={isAdminView} />}
+        {tab === "content" && <CourseContentManager courseId={course.id} isReadOnly={isAdminView} />}
 
         {tab === "test" && (
-          <div>
-            <p className="mb-4 rounded-md bg-ink/5 px-3 py-2 text-xs text-slate">
-              Це старий формат — один тест на весь курс. Зазвичай зручніше додавати тест безпосередньо до уроку:
-              відкрийте вкладку «Уроки» і натисніть іконку{" "}
-              <span className="font-medium text-ink">«Тест уроку»</span> біля потрібного уроку.
-            </p>
-            <TestManager courseId={course.id} isReadOnly={isAdminView} />
-          </div>
+          <TestManager courseId={course.id} isReadOnly={isAdminView} />
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={isDeleteOpen}
+        title="Видалити курс?"
+        description={`Курс «${course.title}» та всі його уроки, теми й прогрес студентів буде видалено назавжди. Цю дію не можна скасувати.`}
+        confirmLabel="Так, видалити"
+        isDanger
+        isLoading={isDeleting}
+        onConfirm={handleDeleteCourse}
+        onCancel={() => setIsDeleteOpen(false)}
+      />
     </div>
   );
 }
