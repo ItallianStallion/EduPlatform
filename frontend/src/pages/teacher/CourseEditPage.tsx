@@ -63,17 +63,20 @@ export function CourseEditPage() {
     if (!id) return;
     setIsSaving(true);
     try {
-      const updated = await coursesApi.update(id, {
+      const payload = {
         title: form.title,
         description: form.description || undefined,
         categoryId: form.categoryId || undefined,
         price: Number(form.price) || 0,
-        coverImage: form.coverImage || null,
+        coverImage: form.coverImage || undefined,
         accessMode: form.accessMode,
-      });
+      };
+      console.log("PATCH payload:", JSON.stringify(payload));
+      const updated = await coursesApi.update(id, payload);
       setCourse(updated);
       notify("Курс оновлено", "success");
     } catch (err) {
+      console.error("PATCH /courses error:", err);
       notify(getErrorMessage(err), "error");
     } finally {
       setIsSaving(false);
