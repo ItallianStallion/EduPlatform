@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { BookOpen, CheckCircle2, Clock, ArrowRight, TrendingUp, Flame } from "lucide-react";
 import { progressApi } from "../../api/progress";
 import type { MyProgressItem } from "../../types";
-import { EmptyState, Card, SkeletonCard } from "../../components/ui";
+import { EmptyState, SkeletonCard } from "../../components/ui";
 import { Button } from "../../components/Button";
 import { useAuth } from "../../context/AuthContext";
 import { formatPrice, getErrorMessage } from "../../utils/helpers";

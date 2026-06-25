@@ -30,7 +30,6 @@ function FilterSelect<T extends string>({
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
 }) {
-  const active = options.find((o) => o.value === value);
   const isDefault = value === options[0].value;
 
   return (
@@ -86,7 +85,7 @@ export function CourseCatalogPage() {
       .list({ q: q.length >= 3 ? q : undefined, categoryId: categoryId || undefined, price, sortBy, page, limit: 12 })
       .then((data) => {
         if (cancelled) return;
-        setResult({ items: data.items, totalPages: data.totalPages, total: (data as any).total });
+        setResult({ items: data.items, totalPages: data.totalPages, total: (data as { total?: number }).total });
 
       })
       .catch((err) => { if (!cancelled) setError(getErrorMessage(err)); })
@@ -161,8 +160,16 @@ export function CourseCatalogPage() {
             <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-50" />
           </div>
 
-          <FilterSelect value={price} options={PRICE_OPTIONS as { value: PriceFilter; label: string }[]} onChange={setPrice} />
-          <FilterSelect value={sortBy} options={SORT_OPTIONS} onChange={setSortBy} />
+          <FilterSelect<PriceFilter>
+            value={price}
+            options={PRICE_OPTIONS as { value: PriceFilter; label: string }[]}
+            onChange={setPrice}
+          />
+          <FilterSelect<SortBy>
+            value={sortBy}
+            options={SORT_OPTIONS}
+            onChange={setSortBy}
+          />
 
           {/* Clear filters */}
           {hasFilters && (
