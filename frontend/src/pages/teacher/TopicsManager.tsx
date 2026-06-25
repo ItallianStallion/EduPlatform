@@ -39,6 +39,8 @@ function TopicTestModal({ topic, isOpen, onClose, isReadOnly }: {
   const [isLoading, setIsLoading] = useState(true);
   const [mode, setMode] = useState<TopicTestMode>("view");
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [title, setTitle] = useState("");
   const [passingScore, setPassingScore] = useState(70);
@@ -133,6 +135,18 @@ function TopicTestModal({ topic, isOpen, onClose, isReadOnly }: {
     finally { setIsSaving(false); }
   }
 
+  async function handleDelete() {
+    setIsDeleting(true);
+    try {
+      await testsApi.deleteForTopic(topic.id);
+      setTest(null);
+      setConfirmDelete(false);
+      setMode("view");
+      notify("Тест теми видалено", "success");
+    } catch (err) { notify(getErrorMessage(err), "error"); }
+    finally { setIsDeleting(false); }
+  }
+
   function renderForm(isEdit: boolean) {
     return (
       <form onSubmit={isEdit ? handleUpdate : handleCreate} className="flex flex-col gap-5">
@@ -201,6 +215,7 @@ function TopicTestModal({ topic, isOpen, onClose, isReadOnly }: {
   }
 
   return (
+    <>
     <Modal isOpen={isOpen} onClose={onClose} title={`Тест теми «${topic.title}»`} size="md">
       {isLoading ? (
         <div className="flex justify-center py-6"><Spinner /></div>
@@ -212,9 +227,15 @@ function TopicTestModal({ topic, isOpen, onClose, isReadOnly }: {
             <Badge tone="gold">Прохідний бал: {test.passingScore}%</Badge>
             {test.maxAttempts && <Badge tone="coral">Макс. спроб: {test.maxAttempts}</Badge>}
             {!isReadOnly && (
-              <Button variant="ghost" size="sm" onClick={enterEdit}>
-                <Pencil className="h-3.5 w-3.5" /> Редагувати
-              </Button>
+              <>
+                <Button variant="ghost" size="sm" onClick={enterEdit}>
+                  <Pencil className="h-3.5 w-3.5" /> Редагувати
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}
+                  className="text-coral-dark hover:bg-coral/8">
+                  <Trash2 className="h-3.5 w-3.5" /> Видалити
+                </Button>
+              </>
             )}
           </div>
           <div className="mt-4 flex flex-col gap-3">
@@ -256,6 +277,18 @@ function TopicTestModal({ topic, isOpen, onClose, isReadOnly }: {
         />
       )}
     </Modal>
+
+    <ConfirmDialog
+      isOpen={confirmDelete}
+      title="Видалити тест теми?"
+      description="Тест буде видалено назавжди. Результати студентів також буде втрачено."
+      confirmLabel="Так, видалити"
+      isDanger
+      isLoading={isDeleting}
+      onConfirm={handleDelete}
+      onCancel={() => setConfirmDelete(false)}
+    />
+  </>
   );
 }
 
@@ -268,6 +301,8 @@ function AssignLessonsModal({ topic, allLessons, assignedToOtherTopics, isOpen, 
   const assignedIds = new Set(topic.lessons.map((l) => l.id));
   const [selected, setSelected] = useState<Set<string>>(new Set(assignedIds));
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const available = allLessons.filter((l) => assignedIds.has(l.id) || !assignedToOtherTopics.has(l.id));
 
@@ -415,10 +450,16 @@ function SortableTopicCard({ topic, isReadOnly, isExpanded, onToggle, onEdit, on
                 );
               })}
               {topic.test && (
-                <li className="flex items-center gap-3 bg-gold/4 border-t border-gold/12 px-6 py-2.5">
+                <li className="group flex items-center gap-3 bg-gold/4 border-t border-gold/12 px-6 py-2.5">
                   <FileQuestion className="h-3.5 w-3.5 shrink-0 text-gold-dark" />
                   <span className="flex-1 text-sm font-medium text-ink">{topic.test.title}</span>
                   <span className="text-xs text-slate">прохідний бал {topic.test.passingScore}%</span>
+                  {!isReadOnly && (
+                    <button onClick={onTest} title="Редагувати тест теми"
+                      className="rounded-lg p-1.5 text-gold-dark opacity-0 group-hover:opacity-100 hover:bg-gold/10 transition-all">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </li>
               )}
             </ol>

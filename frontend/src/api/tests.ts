@@ -50,6 +50,15 @@ export const testsApi = {
     return res.data.data.test ?? res.data.data;
   },
 
+  updateForLesson: async (lessonId: string, payload: TestUpdatePayload): Promise<Test> => {
+    const res = await apiClient.patch(`/tests/lesson/${lessonId}`, payload);
+    return res.data.data.test ?? res.data.data;
+  },
+
+  deleteForLesson: async (lessonId: string): Promise<void> => {
+    await apiClient.delete(`/tests/lesson/${lessonId}`);
+  },
+
   getResultsMetaByLesson: async (lessonId: string): Promise<TestSummary | null> => {
     const res = await apiClient.get(`/tests/lesson/${lessonId}/results`);
     return res.data.data.results ?? null;
@@ -69,6 +78,10 @@ export const testsApi = {
   updateTopicTest: async (topicId: string, payload: TestUpdatePayload): Promise<Test> => {
     const res = await apiClient.patch(`/tests/topic/${topicId}`, payload);
     return res.data.data.test ?? res.data.data;
+  },
+
+  deleteForTopic: async (topicId: string): Promise<void> => {
+    await apiClient.delete(`/tests/topic/${topicId}`);
   },
 
   // ── Спільні для обох типів: оперують testId, не курсом/уроком ──
