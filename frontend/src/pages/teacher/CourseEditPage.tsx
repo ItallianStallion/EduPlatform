@@ -63,14 +63,14 @@ export function CourseEditPage() {
     if (!id) return;
     setIsSaving(true);
     try {
-      const payload = {
+      const payload: Parameters<typeof coursesApi.update>[1] = {
         title: form.title,
         description: form.description || undefined,
-        categoryId: form.categoryId || undefined,
         price: Number(form.price) || 0,
         coverImage: form.coverImage || undefined,
         accessMode: form.accessMode,
       };
+      if (form.categoryId) payload.categoryId = form.categoryId;
       console.log("PATCH payload:", JSON.stringify(payload));
       const updated = await coursesApi.update(id, payload);
       setCourse(updated);
