@@ -17,7 +17,7 @@ import type { Lesson, Topic, Test, TestQuestion } from "../../types";
 import { EmptyState, Badge, SkeletonList, Spinner } from "../../components/ui";
 import { Button } from "../../components/Button";
 import { Modal, ConfirmDialog } from "../../components/Modal";
-import { TextField } from "../../components/FormField";
+import { TextField, TextAreaField } from "../../components/FormField";
 import { getErrorMessage, LESSON_TYPE_LABELS } from "../../utils/helpers";
 import { useToast } from "../../context/ToastContext";
 import { LessonTestModal } from "./LessonTestModal";
@@ -301,8 +301,6 @@ function AssignLessonsModal({ topic, allLessons, assignedToOtherTopics, isOpen, 
   const assignedIds = new Set(topic.lessons.map((l) => l.id));
   const [selected, setSelected] = useState<Set<string>>(new Set(assignedIds));
   const [isSaving, setIsSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   const available = allLessons.filter((l) => assignedIds.has(l.id) || !assignedToOtherTopics.has(l.id));
 
@@ -643,7 +641,7 @@ export function TopicsManager({ courseId, isReadOnly = false }: { courseId: stri
           <TextAreaField label="Опис теми" rows={3}
             placeholder="Необов'язково — короткий опис що охоплює тема"
             value={topicForm.description}
-            onChange={(e) => setTopicForm({ ...topicForm, description: e.target.value })} />
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setTopicForm({ ...topicForm, description: e.target.value })} />
           <div className="flex gap-2 pt-1">
             <Button type="button" variant="ghost" className="flex-1"
               onClick={() => setTopicModal({ open: false, editing: null })}>Скасувати</Button>
