@@ -95,7 +95,7 @@ const getCourses = async ({
     attributes: {
       include: [
         // Додаємо кількість студентів для сортування та відображення
-        [fn('COUNT', col('enrollments.id')), 'enrollmentCount'],
+        [fn('COUNT', literal('DISTINCT "enrollments"."id"')), 'enrollmentCount'],
         [fn('COUNT', literal('DISTINCT "lessons"."id"')), 'lessonsCount'],
       ],
     },
@@ -479,7 +479,7 @@ const getMyCourses = async (teacherId) => {
       },
     ],
     attributes: {
-      include: [[fn('COUNT', col('enrollments.id')), 'enrollmentCount']],
+      include: [[fn('COUNT', literal('DISTINCT "enrollments"."id"')), 'enrollmentCount']],
     },
     group: ['Course.id', 'category.id'],
     order: [['createdAt', 'DESC']],
@@ -505,7 +505,7 @@ const getCourseById = async (courseId, requester = null) => {
       { model: Enrollment, as: 'enrollments', attributes: [] },
     ],
     attributes: {
-      include: [[fn('COUNT', col('enrollments.id')), 'enrollmentCount']],
+      include: [[fn('COUNT', literal('DISTINCT "enrollments"."id"')), 'enrollmentCount']],
     },
     group: ['Course.id', 'teacher.id', 'category.id'],
     subQuery: false,
