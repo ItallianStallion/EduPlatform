@@ -95,6 +95,18 @@ router.get(
 );
 
 /**
+ * DELETE /api/v1/tests/lesson/:lessonId
+ * Видалення тесту блоку, прив'язаного до уроку. Тільки викладач-власник курсу.
+ */
+router.delete(
+  '/lesson/:lessonId',
+  authenticate,
+  checkRole('teacher'),
+  [param('lessonId').isUUID(4).withMessage('Невірний формат ID уроку')],
+  testController.deleteTestForLesson,
+);
+
+/**
  * GET /api/v1/tests/course/:courseId/results
  * Результати поточного студента по тестах курсу.
  */
@@ -200,6 +212,18 @@ router.patch(
     body('maxAttempts').optional({ nullable: true }).isInt({ min: 1 }),
   ],
   testController.updateTopicTest,
+);
+
+/**
+ * DELETE /api/v1/tests/topic/:topicId
+ * Видалення тесту теми. Тільки викладач-власник курсу.
+ */
+router.delete(
+  '/topic/:topicId',
+  authenticate,
+  checkRole('teacher'),
+  [param('topicId').isUUID(4).withMessage('Невірний формат ID теми')],
+  testController.deleteTopicTest,
 );
 
 module.exports = router;

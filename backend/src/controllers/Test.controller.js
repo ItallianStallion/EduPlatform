@@ -195,6 +195,38 @@ const updateTopicTest = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/v1/tests/lesson/:lessonId
+ * Видалення тесту блоку, прив'язаного до уроку. Тільки власник-викладач.
+ */
+const deleteTestForLesson = async (req, res, next) => {
+  try {
+    await testService.deleteTestForLesson(req.params.lessonId, req.user.id);
+    return res.status(200).json({
+      success: true,
+      message: 'Тест блоку видалено.',
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
+/**
+ * DELETE /api/v1/tests/topic/:topicId
+ * Видалення тесту теми. Тільки власник курсу.
+ */
+const deleteTopicTest = async (req, res, next) => {
+  try {
+    await testService.deleteTopicTest(req.params.topicId, req.user.id);
+    return res.status(200).json({
+      success: true,
+      message: 'Тест теми видалено.',
+    });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   getTestByCourse,
   getTestByLesson,
@@ -203,6 +235,8 @@ module.exports = {
   createTestForLesson,
   updateTest,
   updateTopicTest,
+  deleteTestForLesson,
+  deleteTopicTest,
   submitTest,
   getUserTestResults,
   getUserTestResultsByLesson,

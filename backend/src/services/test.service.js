@@ -723,6 +723,84 @@ const updateTopicTest = async (topicId, teacherId, updates) => {
   return test;
 };
 
+// ─────────────────────────────────────────────────────────────
+// DELETE TEST FOR LESSON
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Видаляє тест блоку, прив'язаний до уроку. Тільки власник курсу.
+ * Видалення тесту каскадно видаляє і всі результати спроб студентів
+ * (onDelete: CASCADE на Result.testId).
+ *
+ * @param {string} lessonId
+ * @param {string} teacherId
+ */
+const deleteTestForLesson = async (lessonId, teacherId) => {
+  const lesson = await Lesson.findByPk(lessonId);
+
+  if (!lesson) {
+    const err = new Error('Урок не знайдено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  const course = await Course.findByPk(lesson.courseId);
+  if (!course || course.teacherId !== teacherId) {
+    const err = new Error('Ви не є власником цього курсу.');
+    err.statusCode = 403;
+    err.isOperational = true;
+    throw err;
+  }
+
+  const test = await Test.findOne({ where: { lessonId } });
+  if (!test) {
+    const err = new Error('Тест для цього уроку (блоку) ще не створено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  await test.destroy();
+};
+
+// ─────────────────────────────────────────────────────────────
+// DELETE TEST FOR TOPIC
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Видаляє тест теми. Тільки власник курсу, якому належить тема.
+ * Видалення тесту каскадно видаляє і всі результати спроб студентів
+ * (onDelete: CASCADE на Result.testId).
+ *
+ * @param {string} topicId
+ * @param {string} teacherId
+ */
+const deleteTopicTest = async (topicId, teacherId) => {
+  const topic = await Topic.findByPk(topicId, {
+    include: [{ model: Course, as: 'course' }],
+  });
+
+  if (!topic) {
+    const err = new Error('Тему не знайдено.');
+    err.statusCode = 404; err.isOperational = true; throw err;
+  }
+
+  const { course } = topic;
+  if (!course || course.teacherId !== teacherId) {
+    const err = new Error('Ви не є власником цього курсу.');
+    err.statusCode = 403; err.isOperational = true; throw err;
+  }
+
+  const test = await Test.findOne({ where: { topicId } });
+  if (!test) {
+    const err = new Error('Тест для цієї теми ще не створено.');
+    err.statusCode = 404; err.isOperational = true; throw err;
+  }
+
+  await test.destroy();
+};
+
 module.exports = {
   getTestByCourse,
   getTestByLesson,
@@ -732,6 +810,8 @@ module.exports = {
   createTestForTopic,
   updateTest,
   updateTopicTest,
+  deleteTestForLesson,
+  deleteTopicTest,
   submitTest,
   getUserTestResults,
   getUserTestResultsByLesson,
