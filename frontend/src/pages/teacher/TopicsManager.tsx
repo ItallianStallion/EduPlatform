@@ -111,7 +111,11 @@ function AssignLessonsModal({ topic, allLessons, assignedToOtherTopics, isOpen, 
   const available = allLessons.filter((l) => assignedIds.has(l.id) || !assignedToOtherTopics.has(l.id));
 
   function toggle(id: string) {
-    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) { n.delete(id); } else { n.add(id); }
+      return n;
+    });
   }
 
   async function handleSave() {
@@ -310,7 +314,11 @@ export function TopicsManager({ courseId, isReadOnly = false }: { courseId: stri
   useEffect(reload, [courseId]); // eslint-disable-line
 
   function toggleExpand(id: string) {
-    setExpanded((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) { n.delete(id); } else { n.add(id); }
+      return n;
+    });
   }
 
   async function handleDragEnd(e: DragEndEvent) {
@@ -336,9 +344,11 @@ export function TopicsManager({ courseId, isReadOnly = false }: { courseId: stri
   async function handleTopicSubmit(e: FormEvent) {
     e.preventDefault(); setIsSavingTopic(true);
     try {
-      topicModal.editing
-        ? await topicsApi.update(topicModal.editing.id, { title: topicForm.title, description: topicForm.description || null })
-        : await topicsApi.create(courseId, { title: topicForm.title, description: topicForm.description || null });
+      if (topicModal.editing) {
+        await topicsApi.update(topicModal.editing.id, { title: topicForm.title, description: topicForm.description || null });
+      } else {
+        await topicsApi.create(courseId, { title: topicForm.title, description: topicForm.description || null });
+      }
       notify(topicModal.editing ? "Тему оновлено" : "Тему додано", "success");
       setTopicModal({ open: false, editing: null }); reload();
     } catch (err) { notify(getErrorMessage(err), "error"); }

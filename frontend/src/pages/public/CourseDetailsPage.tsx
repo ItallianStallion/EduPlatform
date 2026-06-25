@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   BookOpen, Lock, FileText, PlayCircle, FileQuestion,
@@ -38,7 +38,7 @@ export function CourseDetailsPage() {
   const isOwner = user && course && (user.id === course.teacherId || user.role === "admin");
   const isAdmin = user?.role === "admin";
 
-  const loadCourseData = async (courseId: string) => {
+  const loadCourseData = useCallback(async (courseId: string) => {
     const courseData = await coursesApi.getById(courseId);
     setCourse(courseData);
 
@@ -74,7 +74,7 @@ export function CourseDetailsPage() {
     } catch {
       // тесту може не існувати
     }
-  };
+  }, [user]);
 
   useEffect(() => {
     if (!id) return;
@@ -87,7 +87,7 @@ export function CourseDetailsPage() {
       .finally(() => { if (!cancelled) setIsLoading(false); });
 
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, loadCourseData]);
 
   async function handleEnroll() {
     if (!id) return;
@@ -115,7 +115,7 @@ export function CourseDetailsPage() {
   function toggleTopic(topicId: string) {
     setExpandedTopics((prev) => {
       const next = new Set(prev);
-      next.has(topicId) ? next.delete(topicId) : next.add(topicId);
+      if (next.has(topicId)) { next.delete(topicId); } else { next.add(topicId); }
       return next;
     });
   }

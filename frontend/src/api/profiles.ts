@@ -7,13 +7,26 @@ export interface ProfileUpdatePayload {
   phone?: string;
 }
 
+interface RawProfileFields {
+  id?: string;
+  userId?: string;
+  avatar?: string | null;
+  bio?: string | null;
+  phone?: string | null;
+}
+
+interface RawProfilePayload extends RawProfileFields {
+  user?: { id?: string; profile?: RawProfileFields };
+  profile?: RawProfileFields;
+}
+
 /**
  * GET /profiles/me та /profiles/:id повертають профіль ВКЛАДЕНИМ всередину
  * користувача: { data: { user: { id, name, ..., profile: { avatar, bio, phone } } } }.
  * PATCH /profiles/me натомість повертає профіль одразу плоско: { data: { profile: {...} } }.
  * Ця функція нормалізує обидва варіанти до єдиної форми UserProfile.
  */
-function normalizeProfile(payload: any): UserProfile {
+function normalizeProfile(payload: RawProfilePayload): UserProfile {
   const user = payload?.user;
   const profile = user?.profile ?? payload?.profile ?? payload ?? {};
   return {
