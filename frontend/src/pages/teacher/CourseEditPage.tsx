@@ -8,7 +8,7 @@ import type { Category, Course } from "../../types";
 import { Spinner, EmptyState, Badge } from "../../components/ui";
 import { Button } from "../../components/Button";
 import { TextField, TextAreaField, SelectField } from "../../components/FormField";
-import { Modal, ConfirmDialog } from "../../components/Modal";
+import { ConfirmDialog } from "../../components/Modal";
 import { formatPrice, getErrorMessage } from "../../utils/helpers";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
