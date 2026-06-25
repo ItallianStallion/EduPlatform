@@ -69,6 +69,7 @@ export function CourseEditPage() {
         categoryId: form.categoryId || null,
         price: Number(form.price) || 0,
         coverImage: form.coverImage || null,
+        accessMode: form.accessMode,
       });
       setCourse(updated);
       notify("Курс оновлено", "success");

@@ -16,6 +16,7 @@ export interface CourseUpsertPayload {
   categoryId?: string | null;
   price?: number;
   coverImage?: string | null;
+  accessMode?: "open" | "sequential";
 }
 
 export const coursesApi = {

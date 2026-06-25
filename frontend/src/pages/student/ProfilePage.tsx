@@ -32,7 +32,11 @@ export function ProfilePage() {
     e.preventDefault();
     setIsSaving(true);
     try {
-      const updated = await profilesApi.updateMyProfile(form);
+      const updated = await profilesApi.updateMyProfile({
+        avatar: form.avatar || undefined,
+        bio: form.bio || undefined,
+        phone: form.phone || undefined,
+      });
       setProfile(updated);
       notify("Профіль оновлено", "success");
     } catch (err) {
