@@ -96,7 +96,7 @@ const getCourses = async ({
       include: [
         // Додаємо кількість студентів для сортування та відображення
         [fn('COUNT', col('enrollments.id')), 'enrollmentCount'],
-        [fn('COUNT', col('lessons.id')), 'lessonsCount'],
+        [fn('COUNT', literal('DISTINCT "lessons"."id"')), 'lessonsCount'],
       ],
     },
     include: [
