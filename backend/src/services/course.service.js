@@ -358,6 +358,34 @@ const createCourse = async (teacherId, data) => {
 };
 
 /**
+ * Видаляє курс. Дозволено лише власнику курсу.
+ *
+ * @param {string} courseId
+ * @param {string} teacherId - ID викладача, що робить запит
+ */
+const deleteCourse = async (courseId, teacherId) => {
+  const course = await Course.findByPk(courseId);
+
+  if (!course) {
+    const err = new Error('Курс не знайдено.');
+    err.statusCode = 404;
+    err.isOperational = true;
+    throw err;
+  }
+
+  // Перевірка власності: тільки автор курсу може видалити
+  if (course.teacherId !== teacherId) {
+    const err = new Error('Ви не можете видалити курс, який вам не належить.');
+    err.statusCode = 403;
+    err.isOperational = true;
+    throw err;
+  }
+
+  await course.destroy();
+  await invalidateCoursesCache();
+};
+
+/**
  * Редагує курс. Дозволено лише власнику курсу.
  *
  * @param {string} courseId
@@ -537,6 +565,7 @@ module.exports = {
   enrollInCourse,
   createCourse,
   updateCourse,
+  deleteCourse,
   setCourseStatus,
   getMyCourses,
   getCourseById,
