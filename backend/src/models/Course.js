@@ -28,9 +28,9 @@ const Course = sequelize.define(
       allowNull: true,
     },
     coverImage: {
-      type: DataTypes.STRING(500),
+      type: DataTypes.TEXT,
       allowNull: true,
-      comment: 'URL обкладинки курсу (S3/R2)',
+      comment: 'URL обкладинки курсу (S3/R2) або base64',
     },
     price: {
       type: DataTypes.DECIMAL(10, 2),

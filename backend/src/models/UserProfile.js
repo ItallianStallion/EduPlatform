@@ -16,8 +16,9 @@ const UserProfile = sequelize.define(
       primaryKey: true,
     },
     // userId визначається через association у models/index.js
+    // fix: TEXT type for large url/base64 fields
     avatar: {
-      type: DataTypes.STRING(500),
+      type: DataTypes.TEXT,
       allowNull: true,
       comment: 'URL аватара (S3/R2)',
     },

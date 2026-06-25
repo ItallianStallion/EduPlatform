@@ -28,18 +28,19 @@ const Lesson = sequelize.define(
       allowNull: false,
       defaultValue: 'text',
     },
+    // fix: TEXT type for large url/base64 fields
     content: {
       type: DataTypes.TEXT,
       allowNull: true,
       comment: 'Текстовий контент уроку (для type=text)',
     },
     videoUrl: {
-      type: DataTypes.STRING(500),
+      type: DataTypes.TEXT,
       allowNull: true,
       comment: 'URL відео (YouTube embed або S3)',
     },
     pdfUrl: {
-      type: DataTypes.STRING(500),
+      type: DataTypes.TEXT,
       allowNull: true,
       comment: 'URL PDF-файлу (S3/R2)',
     },
