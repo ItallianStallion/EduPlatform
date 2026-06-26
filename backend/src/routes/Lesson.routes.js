@@ -6,7 +6,7 @@
 const { Router } = require('express');
 const { body, param } = require('express-validator');
 const lessonController = require('../controllers/Lesson.controller');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { checkRole } = require('../middleware/checkRole');
 
 const router = Router();
@@ -49,7 +49,7 @@ router.post(
  */
 router.get(
   '/course/:courseId/blocks',
-  authenticate,
+  optionalAuthenticate,
   [param('courseId').isUUID(4).withMessage('Невірний формат ID курсу')],
   lessonController.getCourseBlocks,
 );

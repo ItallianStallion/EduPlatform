@@ -52,13 +52,23 @@ const getTopicsByCourse = async (courseId, requester) => {
     err.statusCode = 404; err.isOperational = true; throw err;
   }
 
-  const isOwnerOrAdmin = requester.role === 'admin'
-    || (requester.role === 'teacher' && course.teacherId === requester.id);
+  const isFree = !course.price || Number(course.price) === 0;
 
-  // Студент і викладач-не-власник — на однакових умовах: потрібен запис (Enrollment).
-  // Узгоджено з lesson.service.js (assertCourseAccess).
-  if (!isOwnerOrAdmin) {
-    await assertEnrolled(courseId, requester.id);
+  // Незалогінений
+  if (!requester) {
+    if (!isFree) {
+      const err = new Error('Доступ заборонено. Спочатку запишіться на курс.');
+      err.statusCode = 403; err.isOperational = true; throw err;
+    }
+    // Безкоштовний — показуємо структуру без логіну
+  } else {
+    const isOwnerOrAdmin = requester.role === 'admin'
+      || (requester.role === 'teacher' && course.teacherId === requester.id);
+
+    // Для платного курсу — потрібен запис. Для безкоштовного — ні.
+    if (!isOwnerOrAdmin && !isFree) {
+      await assertEnrolled(courseId, requester.id);
+    }
   }
 
   const topics = await Topic.findAll({

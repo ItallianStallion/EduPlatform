@@ -49,6 +49,25 @@ const assertCourseAccess = async (courseId, requester) => {
     throw err;
   }
 
+  // Незалогінений користувач (requester = null або undefined)
+  if (!requester) {
+    if (course.status !== 'published') {
+      const err = new Error('Курс не знайдено або ще не опубліковано.');
+      err.statusCode = 404;
+      err.isOperational = true;
+      throw err;
+    }
+    const isFree = !course.price || Number(course.price) === 0;
+    if (!isFree) {
+      const err = new Error('Доступ заборонено. Спочатку запишіться на курс.');
+      err.statusCode = 403;
+      err.isOperational = true;
+      throw err;
+    }
+    // Безкоштовний курс — дозволяємо переглянути структуру без логіну
+    return course;
+  }
+
   const ownerOrAdmin = isOwnerOrAdmin(course, requester);
 
   if (course.status !== 'published' && !ownerOrAdmin) {
@@ -59,10 +78,13 @@ const assertCourseAccess = async (courseId, requester) => {
   }
 
   if (!ownerOrAdmin) {
+    const isFree = !course.price || Number(course.price) === 0;
     const enrollment = await Enrollment.findOne({
       where: { userId: requester.id, courseId },
     });
-    if (!enrollment) {
+    // Для платного курсу — обов'язковий запис
+    // Для безкоштовного — дозволяємо бачити структуру навіть без запису
+    if (!enrollment && !isFree) {
       const err = new Error('Доступ заборонено. Спочатку запишіться на курс.');
       err.statusCode = 403;
       err.isOperational = true;
@@ -161,7 +183,9 @@ const getPassedBlockTestLessonIdsSet = async (userId, courseId) => {
  * @param {{ id: string, role: string }} requester
  */
 const annotateLockStatus = async (lessons, course, requester) => {
-  const isSequentialForLearner = course.accessMode === 'sequential' && !isOwnerOrAdmin(course, requester);
+  const isSequentialForLearner = course.accessMode === 'sequential'
+    && requester
+    && !isOwnerOrAdmin(course, requester);
 
   if (!isSequentialForLearner) {
     return lessons.map((lesson) => ({ ...lesson.get({ plain: true }), locked: false }));
@@ -200,7 +224,7 @@ const annotateLockStatus = async (lessons, course, requester) => {
  */
 const getLessonsByCourse = async (courseId, requester) => {
   const course = await assertCourseAccess(courseId, requester);
-  const isLearner = !isOwnerOrAdmin(course, requester);
+  const isLearner = !requester || !isOwnerOrAdmin(course, requester);
 
   const lessons = await Lesson.findAll({
     where: { courseId },
@@ -226,7 +250,7 @@ const getLessonsByCourse = async (courseId, requester) => {
  */
 const getCourseBlocks = async (courseId, requester) => {
   const course = await assertCourseAccess(courseId, requester);
-  const isLearner = !isOwnerOrAdmin(course, requester);
+  const isLearner = !requester || !isOwnerOrAdmin(course, requester);
 
   const lessons = await Lesson.findAll({
     where: { courseId },
@@ -253,7 +277,7 @@ const getCourseBlocks = async (courseId, requester) => {
   // Для учня (студента або викладача-не-власника) — короткий статус
   // "складено/не складено" по кожному тесту блоку, без розкриття питань.
   let passedSet = new Set();
-  if (isLearner && blockTests.length > 0) {
+  if (isLearner && requester && blockTests.length > 0) {
     const blockTestIds = blockTests.map((t) => t.id);
     const passedResults = await Result.findAll({
       where: { userId: requester.id, testId: blockTestIds, passed: true },

@@ -4,16 +4,16 @@
 
 const express = require('express');
 const { body} = require('express-validator');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth');
 const { checkRole } = require('../middleware/checkRole');
 const ctrl = require('../controllers/Topic.controller');
 
 const router = express.Router();
 
-// GET /api/v1/topics/course/:courseId — список тем з уроками (студент/teacher/admin)
+// GET /api/v1/topics/course/:courseId — список тем з уроками (публічно для безкоштовних, інакше — авторизація)
 router.get(
   '/course/:courseId',
-  authenticate,
+  optionalAuthenticate,
   ctrl.getTopicsByCourse,
 );
 
