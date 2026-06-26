@@ -49,7 +49,7 @@ const assertCourseAccess = async (courseId, requester) => {
     throw err;
   }
 
-  // Незалогінений користувач (requester = null або undefined)
+  // Незалогінений — показуємо структуру курсу (назви уроків/тем)
   if (!requester) {
     if (course.status !== 'published') {
       const err = new Error('Курс не знайдено або ще не опубліковано.');
@@ -57,14 +57,6 @@ const assertCourseAccess = async (courseId, requester) => {
       err.isOperational = true;
       throw err;
     }
-    const isFree = !course.price || Number(course.price) === 0;
-    if (!isFree) {
-      const err = new Error('Доступ заборонено. Спочатку запишіться на курс.');
-      err.statusCode = 403;
-      err.isOperational = true;
-      throw err;
-    }
-    // Безкоштовний курс — дозволяємо переглянути структуру без логіну
     return course;
   }
 
@@ -77,21 +69,7 @@ const assertCourseAccess = async (courseId, requester) => {
     throw err;
   }
 
-  if (!ownerOrAdmin) {
-    const isFree = !course.price || Number(course.price) === 0;
-    const enrollment = await Enrollment.findOne({
-      where: { userId: requester.id, courseId },
-    });
-    // Для платного курсу — обов'язковий запис
-    // Для безкоштовного — дозволяємо бачити структуру навіть без запису
-    if (!enrollment && !isFree) {
-      const err = new Error('Доступ заборонено. Спочатку запишіться на курс.');
-      err.statusCode = 403;
-      err.isOperational = true;
-      throw err;
-    }
-  }
-
+  // Структуру (назви уроків) бачать усі — доступ до контенту перевіряється при відкритті уроку.
   return course;
 };
 

@@ -3,7 +3,7 @@
 
 'use strict';
 
-const { Course, Topic, Lesson, Test, Enrollment } = require('../models');
+const { Course, Topic, Lesson, Test } = require('../models');
 
 // ─── Допоміжні ───────────────────────────────────────────────
 
@@ -30,14 +30,6 @@ const assertTopicOwner = async (topicId, teacherId) => {
   return topic;
 };
 
-const assertEnrolled = async (courseId, userId) => {
-  const enrollment = await Enrollment.findOne({ where: { userId, courseId } });
-  if (!enrollment) {
-    const err = new Error('Доступ заборонено. Спочатку запишіться на курс.');
-    err.statusCode = 403; err.isOperational = true; throw err;
-  }
-};
-
 // ─── GET ─────────────────────────────────────────────────────
 
 /**
@@ -52,23 +44,15 @@ const getTopicsByCourse = async (courseId, requester) => {
     err.statusCode = 404; err.isOperational = true; throw err;
   }
 
-  const isFree = !course.price || Number(course.price) === 0;
-
-  // Незалогінений
+  // Незалогінений — показуємо структуру для всіх (і безкоштовних, і платних)
   if (!requester) {
-    if (!isFree) {
-      const err = new Error('Доступ заборонено. Спочатку запишіться на курс.');
-      err.statusCode = 403; err.isOperational = true; throw err;
-    }
-    // Безкоштовний — показуємо структуру без логіну
+    // просто продовжуємо — структуру курсу показуємо всім
   } else {
     const isOwnerOrAdmin = requester.role === 'admin'
       || (requester.role === 'teacher' && course.teacherId === requester.id);
-
-    // Для платного курсу — потрібен запис. Для безкоштовного — ні.
-    if (!isOwnerOrAdmin && !isFree) {
-      await assertEnrolled(courseId, requester.id);
-    }
+    // Доступ до контенту уроків перевіряється окремо (при відкритті уроку).
+    // Тут — лише структура, тому enrollment не перевіряємо.
+    void isOwnerOrAdmin; // використовується нижче якщо потрібно
   }
 
   const topics = await Topic.findAll({
