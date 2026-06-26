@@ -48,10 +48,13 @@ export function CourseDetailsPage() {
 
     let accessGranted = false;
     try {
-      const blocksData = await lessonsApi.getBlocks(courseId);
+      const { blocks: blocksData, enrolled } = await lessonsApi.getBlocks(courseId);
       setBlocks(blocksData);
-      accessGranted = true;
-      setHasAccess(true);
+      // Доступ до контенту визначається явним прапорцем `enrolled` з бекенду
+      // (записаний / власник / admin), а не тим, чи вдалося завантажити
+      // структуру курсу — структуру (preview) бачать усі, незалежно від запису.
+      accessGranted = enrolled || !!isOwnerOrAdmin || !!courseData.isEnrolled;
+      setHasAccess(accessGranted);
       setAccessDenied(false);
     } catch (err) {
       if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {

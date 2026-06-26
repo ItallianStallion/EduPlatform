@@ -45,13 +45,12 @@ export function CourseDetailsPage() {
     const isOwnerOrAdmin = user && (user.id === courseData.teacherId || user.role === "admin");
 
     try {
-      const blocksData = await lessonsApi.getBlocks(courseId);
+      const { blocks: blocksData, enrolled } = await lessonsApi.getBlocks(courseId);
       setBlocks(blocksData);
-      // Структура видна всім.
-      // hasAccess = true → показуємо "Продовжити навчання" (записаний / власник / безкоштовний)
-      // hasAccess = false → показуємо "Записатись"
-      const isFreeNow = !courseData.price || Number(courseData.price) === 0;
-      setHasAccess(isFreeNow || !!isOwnerOrAdmin);
+      // Доступ до контенту визначається явним прапорцем `enrolled` з бекенду
+      // (записаний / власник / admin), а НЕ ціною курсу — інакше незаписаний
+      // користувач бачив би "Продовжити навчання" на будь-якому безкоштовному курсі.
+      setHasAccess(enrolled || !!isOwnerOrAdmin || !!courseData.isEnrolled);
     } catch (err) {
       if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
         setHasAccess(false);

@@ -18,10 +18,10 @@ export const lessonsApi = {
   },
 
   /** Курс як список блоків "урок (+ опційний тест)" — головний ендпоінт для сторінки курсу. */
-  getBlocks: async (courseId: string): Promise<CourseBlock[]> => {
+  getBlocks: async (courseId: string): Promise<{ blocks: CourseBlock[]; enrolled: boolean }> => {
     const res = await apiClient.get(`/lessons/course/${courseId}/blocks`);
     const d = res.data.data;
-    return d.blocks ?? d ?? [];
+    return { blocks: d.blocks ?? d ?? [], enrolled: !!d.enrolled };
   },
 
   getById: async (id: string): Promise<Lesson> => {
