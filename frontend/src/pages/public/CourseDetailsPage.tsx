@@ -29,6 +29,7 @@ export function CourseDetailsPage() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [legacyTestMeta, setLegacyTestMeta] = useState<TestSummary | null>(null);
   const [hasAccess, setHasAccess] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isEnrolling, setIsEnrolling] = useState(false);
@@ -48,9 +49,11 @@ export function CourseDetailsPage() {
       setBlocks(blocksData);
       accessGranted = true;
       setHasAccess(true);
+      setAccessDenied(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
         setHasAccess(false);
+        setAccessDenied(true);
       } else if (!(err instanceof ApiError && err.status === 401)) {
         throw err;
       }
@@ -180,13 +183,23 @@ export function CourseDetailsPage() {
 
           <h2 className="mb-3 font-display text-xl text-ink">Програма курсу</h2>
 
-          {!hasAccess && !isOwner && (
+          {!hasAccess && !isOwner && isFree && (
             <p className="mb-3 flex items-center gap-2 rounded-md bg-ink/5 px-3 py-2 text-sm text-slate">
               <Lock className="h-4 w-4" /> Запишіться на курс, щоб відкрити уроки
             </p>
           )}
 
-          {!hasCurriculum ? (
+          {accessDenied && !isOwner ? (
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-paper-raised px-6 py-10 text-center">
+              <Lock className="h-8 w-8 text-slate/40" />
+              <p className="font-medium text-ink">Доступ до матеріалів закрито</p>
+              <p className="text-sm text-slate">
+                {isFree
+                  ? "Запишіться на курс, щоб переглянути уроки."
+                  : "Придбайте курс, щоб отримати доступ до всіх матеріалів."}
+              </p>
+            </div>
+          ) : !hasCurriculum ? (
             <EmptyState title="Уроки ще не додані" description="Викладач поки не опублікував матеріали." />
           ) : (
             <div className="flex flex-col gap-3">
