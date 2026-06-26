@@ -43,6 +43,9 @@ export function CourseDetailsPage() {
     const courseData = await coursesApi.getById(courseId);
     setCourse(courseData);
 
+    const isPaid = courseData.price && Number(courseData.price) > 0;
+    const isOwnerOrAdmin = user && (user.id === courseData.teacherId || user.role === "admin");
+
     let accessGranted = false;
     try {
       const blocksData = await lessonsApi.getBlocks(courseId);
@@ -51,20 +54,26 @@ export function CourseDetailsPage() {
       setHasAccess(true);
       setAccessDenied(false);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 403) {
+      if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
         setHasAccess(false);
-        setAccessDenied(true);
-      } else if (!(err instanceof ApiError && err.status === 401)) {
+        // Для платного курсу без доступу — показуємо замок
+        // Для безкоштовного — НЕ показуємо замок (бекенд просто вимагає входу для блоків,
+        // але контент буде доступний після запису — тому показуємо лише кнопку "Записатись")
+        setAccessDenied(!!isPaid && !isOwnerOrAdmin);
+      } else {
         throw err;
       }
     }
 
-    // Завантажуємо теми (доступні для власника та enrolled студентів)
-    if (accessGranted || (user && (user.id === courseData.teacherId || user.role === "admin"))) {
+    // Завантажуємо теми:
+    // - власник/адмін: завжди
+    // - enrolled студент (accessGranted): завжди  
+    // - незалогінений/не записаний на БЕЗКОШТОВНИЙ курс: теж пробуємо (для preview)
+    const shouldLoadTopics = accessGranted || isOwnerOrAdmin || !isPaid;
+    if (shouldLoadTopics) {
       try {
         const topicsData = await topicsApi.listByCourse(courseId);
         setTopics(topicsData);
-        // Розкриваємо всі теми за замовчуванням
         setExpandedTopics(new Set(topicsData.map((t) => t.id)));
       } catch {
         // теми недоступні — нічого страшного
@@ -183,20 +192,20 @@ export function CourseDetailsPage() {
 
           <h2 className="mb-3 font-display text-xl text-ink">Програма курсу</h2>
 
-          {!hasAccess && !isOwner && isFree && (
+          {/* Для безкоштовного незаписаного — м'яка підказка без замку */}
+          {!hasAccess && !isOwner && isFree && !accessDenied && (
             <p className="mb-3 flex items-center gap-2 rounded-md bg-ink/5 px-3 py-2 text-sm text-slate">
               <Lock className="h-4 w-4" /> Запишіться на курс, щоб відкрити уроки
             </p>
           )}
 
+          {/* Платний курс без доступу — великий блок із замком */}
           {accessDenied && !isOwner ? (
             <div className="flex flex-col items-center gap-2 rounded-lg border border-line bg-paper-raised px-6 py-10 text-center">
               <Lock className="h-8 w-8 text-slate/40" />
               <p className="font-medium text-ink">Доступ до матеріалів закрито</p>
               <p className="text-sm text-slate">
-                {isFree
-                  ? "Запишіться на курс, щоб переглянути уроки."
-                  : "Придбайте курс, щоб отримати доступ до всіх матеріалів."}
+                Придбайте курс, щоб отримати доступ до всіх матеріалів.
               </p>
             </div>
           ) : !hasCurriculum ? (
