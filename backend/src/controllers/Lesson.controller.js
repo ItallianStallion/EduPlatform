@@ -27,8 +27,8 @@ const getLessonsByCourse = async (req, res, next) => {
  */
 const getCourseBlocks = async (req, res, next) => {
   try {
-    const blocks = await lessonService.getCourseBlocks(req.params.courseId, req.user);
-    return res.status(200).json({ success: true, data: { blocks } });
+    const { blocks, enrolled } = await lessonService.getCourseBlocks(req.params.courseId, req.user);
+    return res.status(200).json({ success: true, data: { blocks, enrolled } });
   } catch (err) {
     return next(err);
   }

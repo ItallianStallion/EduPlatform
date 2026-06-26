@@ -28,6 +28,22 @@ const isOwnerOrAdmin = (course, requester) =>
   requester.role === 'admin' || (requester.role === 'teacher' && course.teacherId === requester.id);
 
 /**
+ * Чи записаний користувач на курс (Enrollment існує).
+ * Власника/адміна тут не перевіряємо — це робиться окремо через isOwnerOrAdmin.
+ *
+ * @param {string} courseId
+ * @param {{ id: string, role: string }|null} requester
+ */
+const isEnrolled = async (courseId, requester) => {
+  if (!requester) return false;
+  const enrollment = await Enrollment.findOne({
+    where: { userId: requester.id, courseId },
+    attributes: ['id'],
+  });
+  return !!enrollment;
+};
+
+/**
  * Перевіряє чи має користувач доступ до уроків курсу.
  *
  * Доступ без формального запису мають: власник-викладач курсу, admin.
@@ -228,7 +244,9 @@ const getLessonsByCourse = async (courseId, requester) => {
  */
 const getCourseBlocks = async (courseId, requester) => {
   const course = await assertCourseAccess(courseId, requester);
-  const isLearner = !requester || !isOwnerOrAdmin(course, requester);
+  const ownerOrAdmin = !!requester && isOwnerOrAdmin(course, requester);
+  const isLearner = !ownerOrAdmin;
+  const enrolled = ownerOrAdmin || (await isEnrolled(courseId, requester));
 
   const lessons = await Lesson.findAll({
     where: { courseId },
@@ -264,7 +282,7 @@ const getCourseBlocks = async (courseId, requester) => {
     passedSet = new Set(passedResults.map((r) => r.testId));
   }
 
-  return lessonsWithLock.map((lesson) => {
+  const blocks = lessonsWithLock.map((lesson) => {
     const blockTest = testByLessonId[lesson.id] || null;
     return {
       lesson,
@@ -279,6 +297,8 @@ const getCourseBlocks = async (courseId, requester) => {
         : null,
     };
   });
+
+  return { blocks, enrolled };
 };
 
 /**
@@ -301,9 +321,25 @@ const getLessonById = async (lessonId, requester) => {
   }
 
   const course = await assertCourseAccess(lesson.courseId, requester);
+  const ownerOrAdmin = requester && isOwnerOrAdmin(course, requester);
+
+  // Контент уроку (відео/текст/PDF) доступний лише записаним студентам,
+  // власнику курсу або admin'у. Незалогінений або незаписаний користувач
+  // бачить структуру курсу (через getCourseBlocks/getLessonsByCourse), але
+  // не сам контент — інакше платні курси були б відкриті будь-кому.
+  if (!ownerOrAdmin) {
+    const enrolled = requester && (await isEnrolled(lesson.courseId, requester));
+    if (!enrolled) {
+      const err = new Error('Щоб відкрити цей урок, потрібно записатись на курс.');
+      err.statusCode = 403;
+      err.isOperational = true;
+      err.code = 'NOT_ENROLLED';
+      throw err;
+    }
+  }
 
   // Перевірка блокування для учня (студента або чужого викладача) в sequential-режимі
-  if (course.accessMode === 'sequential' && !isOwnerOrAdmin(course, requester)) {
+  if (course.accessMode === 'sequential' && !ownerOrAdmin) {
     const allLessons = await Lesson.findAll({
       where: { courseId: lesson.courseId },
       attributes: ['id', 'order'],

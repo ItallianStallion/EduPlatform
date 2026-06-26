@@ -557,6 +557,20 @@ const getCourseById = async (courseId, requester = null) => {
     }
   }
 
+  // Чи записаний поточний користувач на курс — окремо від загального
+  // enrollmentCount, щоб фронтенд міг достовірно показати кнопку
+  // "Продовжити навчання" лише тим, хто справді записаний/власник/admin.
+  let isEnrolled = false;
+  if (requester) {
+    const isOwnerOrAdmin = requester.role === 'admin' || requester.id === course.teacherId;
+    isEnrolled = isOwnerOrAdmin
+      || !!(await Enrollment.findOne({
+        where: { userId: requester.id, courseId: course.id },
+        attributes: ['id'],
+      }));
+  }
+  course.setDataValue('isEnrolled', isEnrolled);
+
   return course;
 };
 
