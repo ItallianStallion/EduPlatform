@@ -224,7 +224,20 @@ const register = async (name, surname, email, password, role = 'student') => {
     role: safeRole,
   });
 
-  return user.toSafeJSON();
+  // Так само, як і при логіні, одразу видаємо пару токенів — без цього
+  // у користувача після реєстрації немає auth cookies, і перший же запит
+  // (наприклад /profiles/me) поверне 401, а спроба /auth/refresh теж 401,
+  // бо є записувати у Redis нема чого. Контролер сам розлогінить щойно
+  // зареєстрованого користувача.
+  const payload = { id: user.id, email: user.email, role: user.role };
+  const { accessToken, refreshToken } = generateTokens(payload);
+  await saveRefreshToken(user.id, refreshToken);
+
+  return {
+    user: user.toSafeJSON(),
+    accessToken,
+    refreshToken,
+  };
 };
 
 module.exports = { login, refreshAccessToken, logout, register };

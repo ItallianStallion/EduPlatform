@@ -117,7 +117,25 @@ const register = async (req, res, next) => {
     }
 
     const { name, surname, email, password, role } = req.body;
-    const user = await authService.register(name, surname, email, password, role);
+    const { user, accessToken, refreshToken } = await authService.register(
+      name,
+      surname,
+      email,
+      password,
+      role,
+    );
+
+    // Без цього у щойно зареєстрованого користувача немає auth cookies,
+    // і перший же запит з фронтенду (наприклад /profiles/me) ловить 401,
+    // а спроба /auth/refresh теж 401 — користувача миттєво розлогінює.
+    res.cookie('accessToken', accessToken, {
+      ...COOKIE_OPTIONS_BASE,
+      maxAge: 15 * 60 * 1000,
+    });
+    res.cookie('refreshToken', refreshToken, {
+      ...COOKIE_OPTIONS_BASE,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
 
     return res.status(201).json({
       success: true,
